@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Поиск брендов</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+        }
+
+        form {
+            margin-bottom: 20px;
+        }
+
+        input[type="text"] {
+            padding: 8px;
+            width: 300px;
+        }
+
+        button {
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 400px;
+            margin-top: 20px;
+        }
+
+        table, th, td {
+            border: 1px solid #ccc;
+        }
+
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f5f5f5;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Поиск брендов</h2>
+
+<form method="get">
+    <input
+        type="text"
+        name="search"
+        placeholder="Введите номер"
+        value="{{ query }}"
+        required
+    >
+    <button type="submit">Поиск</button>
+</form>
+
+{% if results %}
+    <table>
+        <thead>
+            <tr>
+                <th>Артикул</th>
+                <th>Бренд</th>
+                <th>Остатки</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key, value in results.items %}
+                <tr>
+                    <td>{{ key }}</td>
+                    <td>{{ value.brand }}</td>
+                    <td>{{ value.stock }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% elif query %}
+    <p>Ничего не найдено.</p>
+{% endif %}
+
+</body>
+</html>
