@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}{{ client.name }} | AutoPartsSync{% endblock %}
+
+{% block hero %}
+<section class="hero">
+    <span class="eyebrow">Counterparty Profile</span>
+    <h1>{{ client.name }}</h1>
+    <p>
+        {{ client.get_type_display }}
+        {% if client.phone %}· {{ client.phone }}{% endif %}
+    </p>
+</section>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid--two">
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Информация</h2>
+                <p class="muted">Основные данные контрагента.</p>
+            </div>
+            <a class="nav-link" href="{% url 'counterparties:client_list' %}">К списку</a>
+        </div>
+
+        <div class="entity-list">
+            <article class="entity-card">
+                <div class="entity-card__top">
+                    <div>
+                        <h3 class="entity-card__title">{{ client.name }}</h3>
+                        <p class="entity-card__meta">{{ client.get_type_display }}</p>
+                    </div>
+                    <span class="tag">{{ cars|length }} авто</span>
+                </div>
+                <p class="entity-card__meta">
+                    <strong>Телефон:</strong>
+                    {% if client.phone %}{{ client.phone }}{% else %}не указан{% endif %}
+                </p>
+                <p class="entity-card__meta" style="margin-top: 10px;">
+                    <strong>Комментарий:</strong>
+                    {{ client.note|default:"Без комментария" }}
+                </p>
+            </article>
+        </div>
+
+        <div class="entity-list" style="margin-top: 18px;">
+            <details>
+                <summary>Редактировать контрагента</summary>
+                <form method="post" action="{% url 'counterparties:client_update' client.pk %}" style="margin-top: 14px;">
+                    {% csrf_token %}
+                    {{ client_form.as_p }}
+                    <button type="submit" class="button">Сохранить изменения</button>
+                </form>
+            </details>
+
+            <details>
+                <summary>Удалить контрагента</summary>
+                <form method="post" action="{% url 'counterparties:client_delete' client.pk %}" style="margin-top: 14px;">
+                    {% csrf_token %}
+                    <p class="muted">Действие удалит контрагента и его автомобили.</p>
+                    <button type="submit">Удалить</button>
+                </form>
+            </details>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Автомобили</h2>
+                <p class="muted">Машины, привязанные к этому контрагенту.</p>
+            </div>
+        </div>
+
+        <details style="margin-bottom: 18px;">
+            <summary>Добавить автомобиль</summary>
+            <form method="post" action="{% url 'counterparties:car_create' client.pk %}" style="margin-top: 14px;">
+                {% csrf_token %}
+                {{ car_form.as_p }}
+                <button type="submit" class="button">Добавить автомобиль</button>
+            </form>
+        </details>
+
+        <div class="entity-list">
+            {% for car in cars %}
+                <article class="entity-card">
+                    <div class="entity-card__top">
+                        <div>
+                            <h3 class="entity-card__title">{{ car.brand }} {{ car.model }}</h3>
+                            <p class="entity-card__meta">
+                                {% if car.license_plate %}{{ car.license_plate }}{% else %}Госномер не указан{% endif %}
+                            </p>
+                        </div>
+                        {% if car.vin %}
+                            <span class="tag">VIN</span>
+                        {% endif %}
+                    </div>
+
+                    {% if car.vin %}
+                        <p class="entity-card__meta"><strong>VIN:</strong> {{ car.vin }}</p>
+                    {% endif %}
+
+                    <p class="entity-card__meta" style="margin-top: 10px;">
+                        <strong>Комментарий:</strong>
+                        {{ car.note|default:"Без комментария" }}
+                    </p>
+
+                    <div class="entity-list" style="margin-top: 14px;">
+                        <details>
+                            <summary>Редактировать автомобиль</summary>
+                            <form method="post" action="{% url 'counterparties:car_update' car.pk %}" style="margin-top: 14px;">
+                                {% csrf_token %}
+                                <p>
+                                    <label for="brand-{{ car.pk }}">Марка</label>
+                                    <input id="brand-{{ car.pk }}" type="text" name="brand" value="{{ car.brand }}" required>
+                                </p>
+                                <p>
+                                    <label for="model-{{ car.pk }}">Модель</label>
+                                    <input id="model-{{ car.pk }}" type="text" name="model" value="{{ car.model }}" required>
+                                </p>
+                                <p>
+                                    <label for="plate-{{ car.pk }}">Госномер</label>
+                                    <input id="plate-{{ car.pk }}" type="text" name="license_plate" value="{{ car.license_plate }}">
+                                </p>
+                                <p>
+                                    <label for="vin-{{ car.pk }}">VIN</label>
+                                    <input id="vin-{{ car.pk }}" type="text" name="vin" value="{{ car.vin }}">
+                                </p>
+                                <p>
+                                    <label for="note-{{ car.pk }}">Комментарий</label>
+                                    <textarea id="note-{{ car.pk }}" name="note">{{ car.note }}</textarea>
+                                </p>
+                                <button type="submit" class="button">Сохранить</button>
+                            </form>
+                        </details>
+
+                        <details>
+                            <summary>Удалить автомобиль</summary>
+                            <form method="post" action="{% url 'counterparties:car_delete' car.pk %}" style="margin-top: 14px;">
+                                {% csrf_token %}
+                                <button type="submit">Удалить</button>
+                            </form>
+                        </details>
+                    </div>
+                </article>
+            {% empty %}
+                <div class="entity-card">
+                    <h3 class="entity-card__title">Автомобилей пока нет</h3>
+                    <p class="entity-card__meta">Добавьте первый автомобиль через кнопку выше.</p>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+{% endblock %}

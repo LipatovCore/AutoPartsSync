@@ -1,90 +1,76 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <title>Поиск брендов</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px;
-        }
+{% extends "base.html" %}
 
-        form {
-            margin-bottom: 20px;
-        }
+{% block title %}Поиск аналогов | AutoPartsSync{% endblock %}
 
-        input[type="text"] {
-            padding: 8px;
-            width: 300px;
-        }
+{% block hero %}
+<section class="hero">
+    <span class="eyebrow">Parts Scanner</span>
+    <h1>Поиск аналогов и остатков</h1>
+    <p>Проверяйте артикулы, бренды и текущие остатки в едином рабочем контуре.</p>
+</section>
+{% endblock %}
 
-        button {
-            padding: 8px 16px;
-            cursor: pointer;
-        }
+{% block content %}
+<section class="panel">
+    <div class="panel__header">
+        <div>
+            <h2>Найти артикул</h2>
+            <p class="muted">Введите номер детали и получите найденные бренды и остатки.</p>
+        </div>
+        <span class="tag">ABCP + МойСклад</span>
+    </div>
 
-        table {
-            border-collapse: collapse;
-            width: 400px;
-            margin-top: 20px;
-        }
+    <form method="get" class="search-form">
+        <input
+            type="text"
+            name="search"
+            placeholder="Введите номер детали"
+            value="{{ query }}"
+            required
+        >
+        <button type="submit">Поиск</button>
+    </form>
+</section>
 
-        table, th, td {
-            border: 1px solid #ccc;
-        }
+<section class="panel">
+    <div class="panel__header">
+        <div>
+            <h2>Результаты</h2>
+            <p class="muted">{% if query %}Запрос: {{ query }}{% else %}Ожидание нового запроса{% endif %}</p>
+        </div>
+    </div>
 
-        th, td {
-            padding: 8px;
-            text-align: left;
-        }
-
-        th {
-            background-color: #f5f5f5;
-        }
-    </style>
-</head>
-<body>
-
-<form method="post" action="{% url 'logout' %}">
-    {% csrf_token %}
-    <button type="submit">Выйти</button>
-</form>
-
-<h2>Поиск брендов</h2>
-
-<form method="get">
-    <input
-        type="text"
-        name="search"
-        placeholder="Введите номер"
-        value="{{ query }}"
-        required
-    >
-    <button type="submit">Поиск</button>
-</form>
-
-{% if results %}
-    <table>
-        <thead>
-            <tr>
-                <th>Артикул</th>
-                <th>Бренд</th>
-                <th>Остатки</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for key, value in results.items %}
-                <tr>
-                    <td>{{ key }}</td>
-                    <td>{{ value.brand }}</td>
-                    <td>{{ value.stock }}</td>
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-{% elif query %}
-    <p>Ничего не найдено.</p>
-{% endif %}
-
-</body>
-</html>
+    {% if results %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Артикул</th>
+                        <th>Бренд</th>
+                        <th>Остатки</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for key, value in results.items %}
+                        <tr>
+                            <td>{{ key }}</td>
+                            <td>{{ value.brand }}</td>
+                            <td>{{ value.stock }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% elif query %}
+        <div class="entity-card">
+            <h3 class="entity-card__title">Совпадений нет</h3>
+            <p class="entity-card__meta">По запросу {{ query }} ничего не найдено.</p>
+        </div>
+    {% else %}
+        <div class="entity-card">
+            <h3 class="entity-card__title">Пустой экран поиска</h3>
+            <p class="entity-card__meta">Введите артикул сверху, чтобы загрузить результаты.</p>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

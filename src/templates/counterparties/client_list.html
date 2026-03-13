@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Контрагенты | AutoPartsSync{% endblock %}
+
+{% block hero %}
+<section class="hero">
+    <span class="eyebrow">Counterparty Grid</span>
+    <h1>Контрагенты</h1>
+    <p>Список клиентов и поставщиков с быстрым добавлением новой карточки.</p>
+</section>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid--two">
+    <aside class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Добавить контрагента</h2>
+                <p class="muted">Создание новой карточки по кнопке.</p>
+            </div>
+        </div>
+
+        <details>
+            <summary>Открыть форму</summary>
+            <form method="post" action="{% url 'counterparties:client_create' %}" style="margin-top: 14px;">
+                {% csrf_token %}
+                {{ client_form.as_p }}
+                <button type="submit" class="button">Сохранить</button>
+            </form>
+        </details>
+    </aside>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Список</h2>
+                <p class="muted">{{ total_clients }} записей</p>
+            </div>
+        </div>
+
+        <div class="entity-list">
+            {% for client in clients %}
+                <a class="entity-card" href="{% url 'counterparties:client_detail' client.pk %}">
+                    <div class="entity-card__top">
+                        <div>
+                            <h3 class="entity-card__title">{{ client.name }}</h3>
+                            <p class="entity-card__meta">{% if client.phone %}{{ client.phone }}{% else %}Телефон не указан{% endif %}</p>
+                        </div>
+                        <span class="tag">{{ client.get_type_display }}</span>
+                    </div>
+                    <p class="entity-card__meta">{{ client.note|default:"Без комментария" }}</p>
+                </a>
+            {% empty %}
+                <div class="entity-card">
+                    <h3 class="entity-card__title">Список пуст</h3>
+                    <p class="entity-card__meta">Создайте первого клиента или поставщика через кнопку слева.</p>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+{% endblock %}
