@@ -1,6 +1,7 @@
 import os
 import requests
 
+from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 from django.conf import settings
 
@@ -108,7 +109,7 @@ def search_ms(data):
         
         return data
 
-
+@login_required
 def search(request):
     results = []
     query = ""

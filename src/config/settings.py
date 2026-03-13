@@ -130,3 +130,7 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+LOGIN_URL = "/accounts/login/"
+LOGIN_REDIRECT_URL = "/analogs/"
+LOGOUT_REDIRECT_URL = "/accounts/login/"
