@@ -46,7 +46,6 @@
                             <h3 class="entity-card__title">{{ client.name }}</h3>
                             <p class="entity-card__meta">{% if client.phone %}{{ client.phone }}{% else %}Телефон не указан{% endif %}</p>
                         </div>
-                        <span class="tag">{{ client.get_type_display }}</span>
                     </div>
                     <p class="entity-card__meta">{{ client.note|default:"Без комментария" }}</p>
                 </a>
