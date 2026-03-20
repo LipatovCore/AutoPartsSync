@@ -1,61 +1,344 @@
 {% extends "base.html" %}
 
 {% block title %}Контрагенты | AutoPartsSync{% endblock %}
+{% block body_class %}counterparties-body{% endblock %}
+{% block page_class %}counterparties-page{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .counterparties-body .site-header__inner, .counterparties-body .page, .counterparties-body .site-footer { width: min(1560px, calc(100% - 24px)); }
+    .counterparties-page { padding-top: 18px; }
+    .counterparties-hero, .workspace-pane, .dialog-card { box-shadow: var(--shadow); }
+    .counterparties-hero {
+        margin-bottom: 16px; padding: 16px 18px 18px; border-radius: 24px; border: 1px solid rgba(127, 191, 255, 0.18);
+        background: linear-gradient(135deg, rgba(10, 18, 30, 0.98), rgba(7, 14, 23, 0.94));
+    }
+    .counterparties-hero h1 { margin: 0; font-size: clamp(24px, 3vw, 34px); line-height: 1.05; }
+    .counterparties-hero p, .pane-meta, .row-subtitle, .empty-state p, .dialog-card__header p { margin: 8px 0 0; color: var(--muted); }
+    .command-bar, .command-search, .workspace { display: grid; gap: 12px; }
+    .command-bar { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+    .command-search { grid-template-columns: minmax(0, 1fr) auto; margin: 0; }
+    .command-search input { min-height: 52px; border-radius: 16px; font-size: 16px; }
+    .command-actions, .mobile-switcher, .panel-actions, .row-actions, .hints, .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .workspace { grid-template-columns: minmax(300px, 360px) minmax(360px, 480px) minmax(420px, 1fr); gap: 14px; align-items: start; }
+    .workspace-pane {
+        min-height: 640px; padding: 16px; border-radius: 22px; border: 1px solid rgba(127, 191, 255, 0.16);
+        background: linear-gradient(180deg, rgba(10, 18, 30, 0.92), rgba(7, 13, 22, 0.94));
+    }
+    .car-editor {
+        margin-bottom: 12px; padding: 14px; border-radius: 18px; border: 1px solid rgba(82, 182, 255, 0.18);
+        background: linear-gradient(180deg, rgba(13, 26, 40, 0.96), rgba(8, 16, 27, 0.98));
+    }
+    .car-editor__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+    .car-editor__header h3 { margin: 0; font-size: 18px; }
+    .pane-head, .row-main, .dialog-card__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .pane-title, .row-title { margin: 0; font-size: 16px; line-height: 1.2; }
+    .workspace-list, .cars-list, .profile-card { display: grid; gap: 10px; }
+    .result-row, .car-row, .info-tile {
+        padding: 12px 14px; border-radius: 16px; border: 1px solid rgba(139, 197, 255, 0.1); background: rgba(10, 18, 29, 0.84);
+    }
+    .result-row.is-active, .car-row.is-highlighted { border-color: rgba(82, 182, 255, 0.34); box-shadow: inset 0 0 0 1px rgba(82, 182, 255, 0.12); }
+    .result-link { color: inherit; display: block; }
+    .row-subtitle, .empty-state p { font-size: 13px; line-height: 1.45; }
+    .meta-pill {
+        display: inline-flex; min-height: 24px; align-items: center; padding: 0 8px; border-radius: 999px;
+        border: 1px solid rgba(139, 197, 255, 0.12); color: var(--muted); font-size: 11px; text-transform: uppercase;
+    }
+    .meta-pill--accent { border-color: rgba(82, 182, 255, 0.24); color: var(--accent); background: rgba(82, 182, 255, 0.12); }
+    .profile-hero {
+        padding: 16px; border-radius: 18px; border: 1px solid rgba(139, 197, 255, 0.14);
+        background: linear-gradient(135deg, rgba(14, 28, 42, 0.96), rgba(8, 15, 26, 0.96));
+    }
+    .profile-hero h2 { margin: 0; font-size: 24px; line-height: 1.05; }
+    .profile-grid, .car-details, .form-grid { display: grid; gap: 10px; }
+    .profile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .profile-grid .full { grid-column: 1 / -1; }
+    .car-details { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 10px; }
+    .car-detail strong, .info-tile strong { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; text-transform: uppercase; }
+    .car-detail { padding: 10px 12px; border-radius: 12px; background: rgba(6, 12, 20, 0.76); }
+    .empty-state {
+        display: grid; gap: 12px; min-height: 260px; place-items: start; padding: 18px; border-radius: 18px;
+        border: 1px dashed rgba(139, 197, 255, 0.18); background: rgba(7, 13, 22, 0.72);
+    }
+    .mobile-switcher { display: none; margin-bottom: 12px; padding: 4px; border-radius: 16px; border: 1px solid rgba(139, 197, 255, 0.12); background: rgba(8, 14, 24, 0.84); }
+    .mobile-switcher button.is-active { background: rgba(82, 182, 255, 0.14); color: var(--text); }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); }
+    dialog.workspace-dialog { width: min(560px, calc(100% - 20px)); padding: 0; border: 0; border-radius: 22px; color: var(--text); background: transparent; }
+    dialog.workspace-dialog::backdrop { background: rgba(1, 5, 10, 0.72); backdrop-filter: blur(10px); }
+    .dialog-card { padding: 18px; border-radius: 22px; border: 1px solid rgba(127, 191, 255, 0.18); background: linear-gradient(180deg, rgba(10, 18, 30, 0.98), rgba(7, 13, 22, 0.96)); }
+    .dialog-card--drawer { width: min(680px, calc(100vw - 18px)); margin-left: auto; min-height: 100dvh; border-radius: 24px 0 0 24px; }
+    .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .form-grid .full { grid-column: 1 / -1; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+    @media (max-width: 1180px) { .workspace { grid-template-columns: minmax(260px, 320px) minmax(320px, 1fr); } .workspace-pane--cars { grid-column: 1 / -1; min-height: 0; } }
+    @media (max-width: 900px) {
+        .counterparties-body .site-header__inner, .counterparties-body .page, .counterparties-body .site-footer { width: min(100%, calc(100% - 16px)); }
+        .command-bar, .command-search, .workspace, .profile-grid, .car-details, .form-grid { grid-template-columns: 1fr; }
+        .mobile-switcher { display: flex; position: sticky; top: 80px; z-index: 12; }
+        .workspace-pane[data-mobile-pane] { display: none; min-height: 0; }
+        .workspace-pane[data-mobile-pane].is-active { display: block; }
+        .dialog-card--drawer { width: min(100vw, calc(100vw - 4px)); border-radius: 20px 20px 0 0; margin: auto 0 0; min-height: auto; }
+    }
+</style>
+{% endblock %}
 
 {% block hero %}
-<section class="hero">
-    <span class="eyebrow">Counterparty Grid</span>
-    <h1>Контрагенты</h1>
-    <p>Список клиентов и поставщиков с быстрым добавлением новой карточки.</p>
+<section class="counterparties-hero">
+    <span class="eyebrow">Counterparty Workspace</span>
+    <h1>Контрагенты и автомобили</h1>
+    <div class="command-bar">
+        <form class="command-search" method="get" action="{% url 'counterparties:client_list' %}">
+            <label class="visually-hidden" for="workspace-search">Поиск клиента или автомобиля</label>
+            <input id="workspace-search" type="search" name="q" value="{{ query }}" placeholder="Имя, телефон, госномер, VIN, марка или модель" autocomplete="off">
+            <button type="submit" class="button">Найти</button>
+        </form>
+        <div class="command-actions">
+            <button type="button" data-dialog-open="client-create-dialog">+ Клиент</button>
+        </div>
+    </div>
+    <div class="hints">
+        <span class="meta-pill">F2 поиск</span>
+        <span class="meta-pill">Найдено: {{ total_clients }}</span>
+        {% if selected_client %}<span class="meta-pill meta-pill--accent">Авто: {{ selected_client.total_cars }}</span>{% endif %}
+    </div>
 </section>
 {% endblock %}
 
 {% block content %}
-<div class="grid grid--two">
-    <aside class="panel">
-        <div class="panel__header">
+<div class="mobile-switcher" data-mobile-switcher>
+    <button type="button" class="is-active" data-mobile-tab="results">Результаты</button>
+    <button type="button" data-mobile-tab="client">Клиент</button>
+    <button type="button" data-mobile-tab="cars">Авто</button>
+</div>
+
+<section class="workspace">
+    <aside class="workspace-pane workspace-pane--results is-active" data-mobile-pane="results">
+        <div class="pane-head">
             <div>
-                <h2>Добавить контрагента</h2>
-                <p class="muted">Создание новой карточки по кнопке.</p>
+                <h2 class="pane-title">Результаты поиска</h2>
+                <p class="pane-meta">{% if query %}Запрос: «{{ query }}»{% else %}Все клиенты{% endif %}</p>
             </div>
         </div>
-
-        <details>
-            <summary>Открыть форму</summary>
-            <form method="post" action="{% url 'counterparties:client_create' %}" style="margin-top: 14px;">
-                {% csrf_token %}
-                {{ client_form.as_p }}
-                <button type="submit" class="button">Сохранить</button>
-            </form>
-        </details>
-    </aside>
-
-    <section class="panel">
-        <div class="panel__header">
-            <div>
-                <h2>Список</h2>
-                <p class="muted">{{ total_clients }} записей</p>
-            </div>
-        </div>
-
-        <div class="entity-list">
+        <div class="workspace-list">
             {% for client in clients %}
-                <a class="entity-card" href="{% url 'counterparties:client_detail' client.pk %}">
-                    <div class="entity-card__top">
-                        <div>
-                            <h3 class="entity-card__title">{{ client.name }}</h3>
-                            <p class="entity-card__meta">{% if client.phone %}{{ client.phone }}{% else %}Телефон не указан{% endif %}</p>
-                        </div>
+                <article class="result-row{% if selected_client and selected_client.pk == client.pk %} is-active{% endif %}">
+                    <div class="row-main">
+                        <a class="result-link" href="{% url 'counterparties:client_list' %}?client={{ client.pk }}{% if query %}&q={{ query|urlencode }}{% endif %}">
+                            <h3 class="row-title">{{ client.name }}</h3>
+                            <p class="row-subtitle">{% if client.phone %}{{ client.phone }}{% else %}Телефон не указан{% endif %}</p>
+                        </a>
+                        <a class="nav-link" href="{% url 'counterparties:client_list' %}?client={{ client.pk }}{% if query %}&q={{ query|urlencode }}{% endif %}">Открыть</a>
                     </div>
-                    <p class="entity-card__meta">{{ client.note|default:"Без комментария" }}</p>
-                </a>
+                    <div class="chips">
+                        <span class="meta-pill meta-pill--accent">{{ client.total_cars }} авто</span>
+                        {% if client.note %}<span class="meta-pill">есть комментарий</span>{% endif %}
+                    </div>
+                </article>
             {% empty %}
-                <div class="entity-card">
-                    <h3 class="entity-card__title">Список пуст</h3>
-                    <p class="entity-card__meta">Создайте первого клиента или поставщика через кнопку слева.</p>
+                <div class="empty-state">
+                    <div><h3>Ничего не найдено</h3><p>Проверьте запрос или сразу создайте нового клиента.</p></div>
+                    <button type="button" class="button" data-dialog-open="client-create-dialog">Создать клиента</button>
                 </div>
             {% endfor %}
         </div>
+    </aside>
+
+    <section class="workspace-pane workspace-pane--client" data-mobile-pane="client">
+        <div class="pane-head">
+            <div>
+                <h2 class="pane-title">Карточка клиента</h2>
+            </div>
+            {% if selected_client %}<button type="button" data-dialog-open="client-edit-dialog">Редактировать</button>{% endif %}
+        </div>
+        {% if selected_client %}
+            <div class="profile-card">
+                <div class="profile-hero">
+                    <h2>{{ selected_client.name }}</h2>
+                    <p>{% if selected_client.phone %}{{ selected_client.phone }}{% else %}Телефон не указан{% endif %}</p>
+                </div>
+                <div class="profile-grid">
+                    <article class="info-tile"><strong>Автомобили</strong><span>{{ selected_client.total_cars }} записей</span></article>
+                    <article class="info-tile"><strong>Статус</strong><span>Рабочая карточка клиента</span></article>
+                    <article class="info-tile full"><strong>Комментарий</strong><span>{{ selected_client.note|default:"Комментарий не заполнен" }}</span></article>
+                </div>
+                <form method="post" action="{% url 'counterparties:client_delete' selected_client.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="query" value="{{ query }}">
+                    <button type="submit">Удалить клиента</button>
+                </form>
+            </div>
+        {% else %}
+            <div class="empty-state"><div><h3>Клиент не выбран</h3><p>Выберите клиента в результатах или создайте нового.</p></div><button type="button" class="button" data-dialog-open="client-create-dialog">Добавить клиента</button></div>
+        {% endif %}
     </section>
-</div>
+
+    <section class="workspace-pane workspace-pane--cars" data-mobile-pane="cars">
+        <div class="pane-head">
+            <div>
+                <h2 class="pane-title">Автомобили клиента</h2>
+            </div>
+            {% if selected_client %}
+                <div class="panel-actions">
+                    <a class="button" href="{% url 'counterparties:client_list' %}?client={{ selected_client.pk }}&car_form=create{% if query %}&q={{ query|urlencode }}{% endif %}">+ Авто</a>
+                </div>
+            {% endif %}
+        </div>
+        {% if selected_client %}
+            {% if active_car_editor == "create" %}
+                <section class="car-editor">
+                    <div class="car-editor__header">
+                        <div>
+                            <h3>Новый автомобиль</h3>
+                            <p class="pane-meta">Клиент: {{ selected_client.name }}</p>
+                        </div>
+                        <a class="nav-link" href="{% url 'counterparties:client_list' %}?client={{ selected_client.pk }}{% if query %}&q={{ query|urlencode }}{% endif %}">Скрыть</a>
+                    </div>
+                    <form method="post" action="{% url 'counterparties:car_create' selected_client.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="query" value="{{ query }}">
+                        <div class="form-grid">
+                            <div>{{ car_form.brand.label_tag }}{{ car_form.brand }}</div>
+                            <div>{{ car_form.model.label_tag }}{{ car_form.model }}</div>
+                            <div>{{ car_form.license_plate.label_tag }}{{ car_form.license_plate }}</div>
+                            <div>{{ car_form.vin.label_tag }}{{ car_form.vin }}</div>
+                            <div class="full">{{ car_form.note.label_tag }}{{ car_form.note }}</div>
+                        </div>
+                        <div class="dialog-actions">
+                            <a class="nav-link" href="{% url 'counterparties:client_list' %}?client={{ selected_client.pk }}{% if query %}&q={{ query|urlencode }}{% endif %}">Отмена</a>
+                            <button type="submit" class="button">Сохранить автомобиль</button>
+                        </div>
+                    </form>
+                </section>
+            {% elif active_car %}
+                <section class="car-editor">
+                    <div class="car-editor__header">
+                        <div>
+                            <h3>Редактирование автомобиля</h3>
+                            <p class="pane-meta">{{ active_car.brand }} {{ active_car.model }}</p>
+                        </div>
+                        <a class="nav-link" href="{% url 'counterparties:client_list' %}?client={{ selected_client.pk }}{% if query %}&q={{ query|urlencode }}{% endif %}">Скрыть</a>
+                    </div>
+                    <form method="post" action="{% url 'counterparties:car_update' active_car.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="query" value="{{ query }}">
+                        <div class="form-grid">
+                            <div><label for="brand-active-{{ active_car.pk }}">Марка</label><input id="brand-active-{{ active_car.pk }}" type="text" name="brand" value="{{ active_car.brand }}" required></div>
+                            <div><label for="model-active-{{ active_car.pk }}">Модель</label><input id="model-active-{{ active_car.pk }}" type="text" name="model" value="{{ active_car.model }}" required></div>
+                            <div><label for="license-active-{{ active_car.pk }}">Госномер</label><input id="license-active-{{ active_car.pk }}" type="text" name="license_plate" value="{{ active_car.license_plate }}"></div>
+                            <div><label for="vin-active-{{ active_car.pk }}">VIN</label><input id="vin-active-{{ active_car.pk }}" type="text" name="vin" value="{{ active_car.vin }}" maxlength="17"></div>
+                            <div class="full"><label for="note-active-{{ active_car.pk }}">Комментарий</label><textarea id="note-active-{{ active_car.pk }}" name="note" rows="4">{{ active_car.note }}</textarea></div>
+                        </div>
+                        <div class="dialog-actions">
+                            <a class="nav-link" href="{% url 'counterparties:client_list' %}?client={{ selected_client.pk }}{% if query %}&q={{ query|urlencode }}{% endif %}">Отмена</a>
+                            <button type="submit" class="button">Сохранить изменения</button>
+                        </div>
+                    </form>
+                </section>
+            {% endif %}
+            <div class="cars-list">
+                {% for car in selected_cars %}
+                    <article class="car-row{% if car.pk in matched_car_ids %} is-highlighted{% endif %}">
+                        <div class="row-main">
+                            <div>
+                                <h3 class="row-title">{{ car.brand }} {{ car.model }}</h3>
+                                <p class="row-subtitle">{% if car.license_plate %}{{ car.license_plate }}{% else %}Госномер не указан{% endif %}</p>
+                            </div>
+                            <div class="row-actions">
+                                <a class="nav-link" href="{% url 'counterparties:client_list' %}?client={{ selected_client.pk }}&car_form={{ car.pk }}{% if query %}&q={{ query|urlencode }}{% endif %}">Редактировать</a>
+                                <form method="post" action="{% url 'counterparties:car_delete' car.pk %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="query" value="{{ query }}">
+                                    <button type="submit">Удалить</button>
+                                </form>
+                            </div>
+                        </div>
+                        <div class="car-details">
+                            <div class="car-detail"><strong>VIN</strong><span>{{ car.vin|default:"Не указан" }}</span></div>
+                            <div class="car-detail"><strong>Комментарий</strong><span>{{ car.note|default:"Без комментария" }}</span></div>
+                            <div class="car-detail"><strong>Клиент</strong><span>{{ selected_client.name }}</span></div>
+                        </div>
+                    </article>
+                {% empty %}
+                    <div class="empty-state"><div><h3>Автомобилей пока нет</h3><p>Добавьте первый автомобиль прямо из этой секции.</p></div><a class="button" href="{% url 'counterparties:client_list' %}?client={{ selected_client.pk }}&car_form=create{% if query %}&q={{ query|urlencode }}{% endif %}">Добавить автомобиль</a></div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state"><div><h3>Нет выбранного клиента</h3><p>Сначала выберите клиента, затем справа появятся связанные автомобили.</p></div></div>
+        {% endif %}
+    </section>
+</section>
+
+<dialog id="client-create-dialog" class="workspace-dialog">
+    <div class="dialog-card">
+        <div class="dialog-card__header"><div><h2>Новый клиент</h2><p>Короткая форма для быстрого добавления карточки.</p></div><button type="button" data-dialog-close>×</button></div>
+        <form method="post" action="{% url 'counterparties:client_create' %}">
+            {% csrf_token %}
+            <input type="hidden" name="query" value="{{ query }}">
+            <div class="form-grid">
+                <div class="full">{{ client_form.name.label_tag }}{{ client_form.name }}</div>
+                <div class="full">{{ client_form.phone.label_tag }}{{ client_form.phone }}</div>
+                <div class="full">{{ client_form.note.label_tag }}{{ client_form.note }}</div>
+            </div>
+            <div class="dialog-actions">
+                <button type="button" data-dialog-close>Отмена</button>
+                <button type="submit" name="add_car_after_save" value="0">Сохранить</button>
+                <button type="submit" class="button" name="add_car_after_save" value="1">Сохранить и добавить авто</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+{% if selected_client and client_edit_form %}
+<dialog id="client-edit-dialog" class="workspace-dialog">
+    <div class="dialog-card">
+        <div class="dialog-card__header"><div><h2>Редактирование клиента</h2><p>{{ selected_client.name }}</p></div><button type="button" data-dialog-close>×</button></div>
+        <form method="post" action="{% url 'counterparties:client_update' selected_client.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="query" value="{{ query }}">
+            <div class="form-grid">
+                <div class="full">{{ client_edit_form.name.label_tag }}{{ client_edit_form.name }}</div>
+                <div class="full">{{ client_edit_form.phone.label_tag }}{{ client_edit_form.phone }}</div>
+                <div class="full">{{ client_edit_form.note.label_tag }}{{ client_edit_form.note }}</div>
+            </div>
+            <div class="dialog-actions"><button type="button" data-dialog-close>Отмена</button><button type="submit" class="button">Сохранить изменения</button></div>
+        </form>
+    </div>
+</dialog>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    (() => {
+        const openDialog = (id) => {
+            const dialog = document.getElementById(id);
+            if (dialog && typeof dialog.showModal === "function") dialog.showModal();
+        };
+        document.querySelectorAll("[data-dialog-open]").forEach((button) => button.addEventListener("click", () => openDialog(button.dataset.dialogOpen)));
+        document.querySelectorAll("[data-dialog-close]").forEach((button) => button.addEventListener("click", () => button.closest("dialog")?.close()));
+        document.querySelectorAll("dialog.workspace-dialog").forEach((dialog) => dialog.addEventListener("click", (event) => {
+            const rect = dialog.getBoundingClientRect();
+            const inside = rect.top <= event.clientY && event.clientY <= rect.bottom && rect.left <= event.clientX && event.clientX <= rect.right;
+            if (!inside) dialog.close();
+        }));
+        const buttons = document.querySelectorAll("[data-mobile-tab]");
+        const panes = document.querySelectorAll("[data-mobile-pane]");
+        const activatePane = (name) => {
+            buttons.forEach((button) => button.classList.toggle("is-active", button.dataset.mobileTab === name));
+            panes.forEach((pane) => pane.classList.toggle("is-active", pane.dataset.mobilePane === name));
+        };
+        buttons.forEach((button) => button.addEventListener("click", () => activatePane(button.dataset.mobileTab)));
+        const preselectedDialog = "{{ dialog|escapejs }}";
+        if (preselectedDialog) openDialog(`${preselectedDialog}-dialog`);
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "F2") {
+                event.preventDefault();
+                const input = document.getElementById("workspace-search");
+                input?.focus();
+                input?.select();
+            }
+        });
+    })();
+</script>
 {% endblock %}
