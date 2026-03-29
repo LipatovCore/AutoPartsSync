@@ -5,11 +5,19 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from employees.forms import EmployeeAuthenticationForm, EmployeeInvitationIssueForm
+from employees.forms import (
+    EmployeeAuthenticationForm,
+    EmployeeInvitationIssueForm,
+    EmployeePasswordSetupForm,
+)
 from employees.repositories.invitation_repository import EmployeeInvitationRepository
 from employees.services.invitation_service import (
     EmployeeInvitationService,
     EmployeeInvitationServiceError,
+)
+from employees.services.password_setup_service import (
+    EmployeePasswordSetupService,
+    EmployeePasswordSetupServiceError,
 )
 
 
@@ -28,7 +36,7 @@ def _ensure_system_admin(request):
 
 
 def _build_invitation_url(request, raw_token: str) -> str:
-    invitation_path = f"/employees/invitations/{raw_token}/set-password/"
+    invitation_path = reverse("employees:set-password", args=[raw_token])
     return request.build_absolute_uri(invitation_path)
 
 
@@ -120,3 +128,55 @@ def employee_reissue_invitation(request, employee_id: int):
     request.session["employee_invitation_email"] = result.employee.email
     messages.success(request, "Приглашение перевыпущено.")
     return redirect(reverse("employees:list"))
+
+
+def employee_set_password(request, token: str):
+    service = EmployeePasswordSetupService()
+
+    try:
+        invitation = service.get_invitation_for_token(raw_token=token)
+    except EmployeePasswordSetupServiceError as error:
+        return render(
+            request,
+            "employees/set_password.html",
+            {
+                "form": None,
+                "is_valid_link": False,
+                "error_message": str(error),
+            },
+        )
+
+    form = EmployeePasswordSetupForm(user=invitation.employee, data=request.POST or None)
+
+    if request.method == "POST" and form.is_valid():
+        try:
+            service.activate_employee_with_password(
+                raw_token=token,
+                password=form.cleaned_data["new_password1"],
+            )
+        except EmployeePasswordSetupServiceError as error:
+            return render(
+                request,
+                "employees/set_password.html",
+                {
+                    "form": None,
+                    "is_valid_link": False,
+                    "error_message": str(error),
+                },
+            )
+
+        messages.success(
+            request,
+            "Пароль установлен. Теперь войдите в систему по email и паролю.",
+        )
+        return redirect(reverse("login"))
+
+    return render(
+        request,
+        "employees/set_password.html",
+        {
+            "form": form,
+            "is_valid_link": True,
+            "error_message": None,
+        },
+    )

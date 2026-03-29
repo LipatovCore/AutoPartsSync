@@ -1,5 +1,5 @@
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm
 from django.forms import EmailField, EmailInput, PasswordInput
 
 
@@ -34,6 +34,33 @@ class EmployeeInvitationIssueForm(forms.Form):
             attrs={
                 "autocomplete": "email",
                 "placeholder": "employee@example.com",
+            }
+        ),
+    )
+
+
+class EmployeePasswordSetupForm(SetPasswordForm):
+    error_messages = {
+        "password_mismatch": "Введенные пароли не совпадают.",
+    }
+
+    new_password1 = forms.CharField(
+        label="Новый пароль",
+        strip=False,
+        widget=PasswordInput(
+            attrs={
+                "autocomplete": "new-password",
+                "placeholder": "Придумайте пароль",
+            }
+        ),
+    )
+    new_password2 = forms.CharField(
+        label="Подтверждение пароля",
+        strip=False,
+        widget=PasswordInput(
+            attrs={
+                "autocomplete": "new-password",
+                "placeholder": "Повторите пароль",
             }
         ),
     )

@@ -37,6 +37,28 @@ class EmployeeInvitationRepository:
             expires_at=expires_at,
         )
 
+    def get_active_invitation_by_token_hash(self, token_hash: str) -> EmployeeInvitation | None:
+        return (
+            EmployeeInvitation.objects.select_related("employee")
+            .filter(
+                token_hash=token_hash,
+                used_at__isnull=True,
+                revoked_at__isnull=True,
+            )
+            .first()
+        )
+
+    def mark_invitation_used(self, *, invitation: EmployeeInvitation, used_at) -> EmployeeInvitation:
+        invitation.used_at = used_at
+        invitation.save(update_fields=["used_at", "updated_at"])
+        return invitation
+
+    def activate_employee(self, *, employee: Employee) -> Employee:
+        employee.status = Employee.Status.ACTIVE
+        employee.email_verified = True
+        employee.save(update_fields=["status", "email_verified", "updated_at"])
+        return employee
+
     def list_employees_with_invitations(self) -> QuerySet[Employee]:
         active_invitations = EmployeeInvitation.objects.filter(
             used_at__isnull=True,

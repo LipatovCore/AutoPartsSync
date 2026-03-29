@@ -12,7 +12,7 @@
   Модуль контрагентов и автомобилей. Содержит модели `Client` и `Car`, формы, CRUD-view-функции и маршруты.
 
 - `src/employees`
-  Модуль сотрудников и employee-auth. На текущем этапе содержит кастомную user-модель `Employee`, модель `EmployeeInvitation`, менеджер пользователя для email-only identity, формы логина и выдачи приглашения, backend аутентификации, login view, employee-management view, а также service/repository для выпуска приглашений.
+  Модуль сотрудников и employee-auth. На текущем этапе содержит кастомную user-модель `Employee`, модель `EmployeeInvitation`, менеджер пользователя для email-only identity, формы логина, выдачи приглашения и установки пароля, backend аутентификации, login view, employee-management view, публичный view установки пароля по токену, а также service/repository для выпуска приглашений и активации сотрудника.
 
 - `src/templates`
   Общие и прикладные HTML-шаблоны. Интерфейс серверно-рендеринговый: Django view собирает данные и сразу отдает готовую страницу.
@@ -67,16 +67,19 @@
   Содержит `EmployeeManager` для создания обычных пользователей и суперпользователей через email.
 
 - `employees.forms`
-  Содержит `EmployeeAuthenticationForm` для login по email и `EmployeeInvitationIssueForm` для административного выпуска приглашения.
+  Содержит `EmployeeAuthenticationForm` для login по email, `EmployeeInvitationIssueForm` для административного выпуска приглашения и `EmployeePasswordSetupForm` для установки пароля по invite-ссылке.
 
 - `employees.auth_backends`
   Содержит `EmployeeAuthenticationBackend`, который разрешает вход только активным с точки зрения доменного статуса сотрудникам и использует email как идентификатор.
 
 - `employees.views`
-  Содержит `EmployeeLoginView`, а также admin-only view для списка сотрудников, создания сотрудника и перевыпуска приглашения.
+  Содержит `EmployeeLoginView`, admin-only view для списка сотрудников, создания сотрудника и перевыпуска приглашения, а также публичный view установки пароля по invite-токену.
 
 - `employees.services.invitation_service`
   Реализует бизнес-сценарий создания сотрудника со статусом `created`, генерации одноразового токена, отзыва предыдущего приглашения и выпуска нового приглашения.
+
+- `employees.services.password_setup_service`
+  Реализует бизнес-сценарий активации сотрудника по invite-токену: повторно валидирует токен, устанавливает пароль, переводит сотрудника в `active`, помечает приглашение использованным и завершает старые сессии сотрудника.
 
 - `employees.repositories.invitation_repository`
   Инкапсулирует ORM-операции для поиска сотрудника, отзыва активного приглашения, создания приглашения и выборки employee-management списка.
@@ -106,6 +109,7 @@
   `counterparties/client_list.html` <- `counterparties.views.client_list`
   `registration/login.html` <- `employees.views.EmployeeLoginView`
   `employees/employee_management.html` <- `employees.views.employee_list`
+  `employees/set_password.html` <- `employees.views.employee_set_password`
 
 ## Потоки данных
 
@@ -181,7 +185,7 @@
 - Этот вариант проще на короткой дистанции, но хуже масштабируется, сохраняет технический долг вокруг identity и усложняет дальнейшее развитие ролей и employee-flow.
 - Для первой версии employee-auth этот вариант не является целевым и не должен использоваться в новых этапах плана.
 
-### Реализованные модули этапов 2-4
+### Реализованные модули этапов 2-5
 
 - `employees.models`
   Реализованы модели `Employee` и `EmployeeInvitation`.
@@ -190,30 +194,33 @@
   Реализован менеджер `EmployeeManager` для создания пользователей по email.
 
 - `employees.forms`
-  Реализованы формы `EmployeeAuthenticationForm` для email-only login и `EmployeeInvitationIssueForm` для admin-only invite flow.
+  Реализованы формы `EmployeeAuthenticationForm` для email-only login, `EmployeeInvitationIssueForm` для admin-only invite flow и `EmployeePasswordSetupForm` для установки пароля по invite-ссылке.
 
 - `employees.auth_backends`
   Реализован backend `EmployeeAuthenticationBackend`, который запрещает вход сотрудникам со статусом `deactivated`.
 
 - `employees.views`
-  Реализованы `EmployeeLoginView` для маршрута `/accounts/login/` и employee-management view для создания сотрудника и перевыпуска приглашения.
+  Реализованы `EmployeeLoginView` для маршрута `/accounts/login/`, employee-management view для создания сотрудника и перевыпуска приглашения, а также публичный экран `/employees/invitations/<token>/set-password/`.
 
 - `employees.services.invitation_service`
   Реализован сценарий безопасного выпуска приглашения: raw token генерируется один раз, в базе хранится только хеш, TTL задается настройкой проекта, предыдущее активное приглашение отзывается в той же транзакции.
 
 - `employees.repositories.invitation_repository`
-  Реализован репозиторий для CRUD-операций invite flow и списка сотрудников в employee-management.
+  Реализован репозиторий для CRUD-операций invite flow, активации сотрудника по токену и списка сотрудников в employee-management.
+
+- `employees.services.password_setup_service`
+  Реализован сценарий установки пароля по одноразовому токену с единым сообщением об ошибке для невалидной ссылки, переводом сотрудника в `active`, инвалидированием токена и завершением старых сессий.
 
 ### Планируемые модули следующих этапов
 
 - `employees.services`
-  Дальнейшее место для сценариев активации по токену, деактивации, ограничения частоты запросов, аудита и завершения сессий.
+  Дальнейшее место для сценариев деактивации, ограничения частоты запросов, аудита и завершения сессий.
 
 - `employees.repositories`
   Дальнейшее место для инкапсуляции ORM-операций по security-аудиту и сессионным сценариям employee-auth.
 
 - `employees.views`
-  Планируемые view для административного управления сотрудниками и для экрана установки пароля по приглашению, кроме уже реализованного login view.
+  Планируемые view для следующих административных security-сценариев employee-auth поверх уже реализованных login, employee-management и password-setup view.
 
 ### Модель данных
 

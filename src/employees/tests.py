@@ -2,6 +2,9 @@ from datetime import timedelta
 import hashlib
 
 from django.conf import settings
+from django.contrib.auth import SESSION_KEY, get_user_model
+from django.contrib.sessions.backends.db import SessionStore
+from django.contrib.sessions.models import Session
 from django.db import IntegrityError
 from django.test import TestCase
 from django.urls import reverse
@@ -11,6 +14,10 @@ from employees.models import Employee, EmployeeInvitation
 from employees.services.invitation_service import (
     EmployeeInvitationService,
     EmployeeInvitationServiceError,
+)
+from employees.services.password_setup_service import (
+    EmployeePasswordSetupService,
+    EmployeePasswordSetupServiceError,
 )
 
 
@@ -181,6 +188,73 @@ class EmployeeInvitationServiceTests(TestCase):
             )
 
 
+class EmployeePasswordSetupServiceTests(TestCase):
+    def setUp(self):
+        self.service = EmployeePasswordSetupService()
+        self.issuer = Employee.objects.create_superuser(
+            email="issuer@example.com",
+            password="safe-password-123",
+        )
+        self.employee = Employee.objects.create_user(
+            email="created@example.com",
+            password=None,
+            status=Employee.Status.CREATED,
+        )
+        self.raw_token = "valid-token"
+        self.invitation = EmployeeInvitation.objects.create(
+            employee=self.employee,
+            issued_by=self.issuer,
+            token_hash=hashlib.sha256(self.raw_token.encode("utf-8")).hexdigest(),
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+
+    def test_activate_employee_with_password_marks_invitation_used_and_activates_employee(self):
+        session = SessionStore()
+        session[SESSION_KEY] = str(self.employee.pk)
+        session.create()
+
+        self.service.activate_employee_with_password(
+            raw_token=self.raw_token,
+            password="Complex-pass-123",
+        )
+
+        self.employee.refresh_from_db()
+        self.invitation.refresh_from_db()
+
+        self.assertEqual(self.employee.status, Employee.Status.ACTIVE)
+        self.assertTrue(self.employee.check_password("Complex-pass-123"))
+        self.assertIsNotNone(self.invitation.used_at)
+        self.assertFalse(
+            Session.objects.filter(session_key=session.session_key).exists()
+        )
+
+    def test_activate_employee_with_password_rejects_expired_invitation(self):
+        self.invitation.expires_at = timezone.now() - timedelta(seconds=1)
+        self.invitation.save(update_fields=["expires_at", "updated_at"])
+
+        with self.assertRaisesMessage(
+            EmployeePasswordSetupServiceError,
+            self.service.INVALID_LINK_MESSAGE,
+        ):
+            self.service.activate_employee_with_password(
+                raw_token=self.raw_token,
+                password="Complex-pass-123",
+            )
+
+    def test_activate_employee_with_password_rejects_non_created_employee(self):
+        self.employee.status = Employee.Status.ACTIVE
+        self.employee.save(update_fields=["status", "updated_at"])
+
+        with self.assertRaisesMessage(
+            EmployeePasswordSetupServiceError,
+            self.service.INVALID_LINK_MESSAGE,
+        ):
+            self.service.activate_employee_with_password(
+                raw_token=self.raw_token,
+                password="Complex-pass-123",
+            )
+
+
 class EmployeeLoginTests(TestCase):
     def setUp(self):
         self.password = "safe-password-123"
@@ -204,7 +278,7 @@ class EmployeeLoginTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'type="email"', html=False)
-        self.assertContains(response, "name=\"username\"", html=False)
+        self.assertContains(response, 'name="username"', html=False)
         self.assertContains(response, "Email")
 
     def test_active_employee_can_log_in_with_email_and_password(self):
@@ -293,10 +367,7 @@ class EmployeeManagementViewTests(TestCase):
         employee = Employee.objects.get(email="invited@example.com")
         invitation = EmployeeInvitation.objects.get(employee=employee)
 
-        self.assertContains(
-            response,
-            f"/employees/invitations/",
-        )
+        self.assertContains(response, "/employees/invitations/")
         self.assertNotContains(response, invitation.token_hash)
         self.assertEqual(employee.status, Employee.Status.CREATED)
 
@@ -347,3 +418,126 @@ class EmployeeManagementViewTests(TestCase):
             response,
             "Приглашение можно перевыпускать только для сотрудников со статусом created.",
         )
+
+
+class EmployeePasswordSetupViewTests(TestCase):
+    def setUp(self):
+        self.password = "safe-password-123"
+        self.user_model = get_user_model()
+        self.issuer = self.user_model.objects.create_superuser(
+            email="admin@example.com",
+            password=self.password,
+        )
+        self.employee = self.user_model.objects.create_user(
+            email="created@example.com",
+            password=None,
+            status=Employee.Status.CREATED,
+        )
+        self.raw_token = "view-token"
+        self.invitation = EmployeeInvitation.objects.create(
+            employee=self.employee,
+            issued_by=self.issuer,
+            token_hash=hashlib.sha256(self.raw_token.encode("utf-8")).hexdigest(),
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+
+    def test_valid_token_renders_password_setup_form(self):
+        response = self.client.get(
+            reverse("employees:set-password", args=[self.raw_token])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Установка пароля")
+        self.assertContains(response, 'name="new_password1"', html=False)
+        self.assertContains(response, 'name="new_password2"', html=False)
+
+    def test_invalid_token_shows_generic_error_message(self):
+        response = self.client.get(
+            reverse("employees:set-password", args=["unknown-token"])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            EmployeePasswordSetupService.INVALID_LINK_MESSAGE,
+        )
+        self.assertNotContains(response, 'name="new_password1"', html=False)
+
+    def test_successful_password_setup_redirects_to_login_and_activates_employee(self):
+        session = SessionStore()
+        session[SESSION_KEY] = str(self.employee.pk)
+        session.create()
+
+        response = self.client.post(
+            reverse("employees:set-password", args=[self.raw_token]),
+            {
+                "new_password1": "Complex-pass-123",
+                "new_password2": "Complex-pass-123",
+            },
+            follow=True,
+        )
+
+        self.employee.refresh_from_db()
+        self.invitation.refresh_from_db()
+
+        self.assertRedirects(response, reverse("login"))
+        self.assertContains(
+            response,
+            "Пароль установлен. Теперь войдите в систему по email и паролю.",
+        )
+        self.assertEqual(self.employee.status, Employee.Status.ACTIVE)
+        self.assertTrue(self.employee.check_password("Complex-pass-123"))
+        self.assertIsNotNone(self.invitation.used_at)
+        self.assertFalse(
+            Session.objects.filter(session_key=session.session_key).exists()
+        )
+
+    def test_used_token_cannot_be_reused(self):
+        self.client.post(
+            reverse("employees:set-password", args=[self.raw_token]),
+            {
+                "new_password1": "Complex-pass-123",
+                "new_password2": "Complex-pass-123",
+            },
+        )
+
+        response = self.client.get(
+            reverse("employees:set-password", args=[self.raw_token])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            EmployeePasswordSetupService.INVALID_LINK_MESSAGE,
+        )
+
+    def test_expired_token_is_rejected(self):
+        self.invitation.expires_at = timezone.now() - timedelta(minutes=1)
+        self.invitation.save(update_fields=["expires_at", "updated_at"])
+
+        response = self.client.get(
+            reverse("employees:set-password", args=[self.raw_token])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            EmployeePasswordSetupService.INVALID_LINK_MESSAGE,
+        )
+
+    def test_invalid_password_shows_form_errors_without_activating_employee(self):
+        response = self.client.post(
+            reverse("employees:set-password", args=[self.raw_token]),
+            {
+                "new_password1": "123",
+                "new_password2": "321",
+            },
+        )
+
+        self.employee.refresh_from_db()
+        self.invitation.refresh_from_db()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Введенные пароли не совпадают")
+        self.assertEqual(self.employee.status, Employee.Status.CREATED)
+        self.assertIsNone(self.invitation.used_at)
