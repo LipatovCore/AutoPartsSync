@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.db import IntegrityError
 from django.test import TestCase
 from django.utils import timezone
+from django.urls import reverse
 
 from employees.models import Employee, EmployeeInvitation
 
@@ -82,3 +83,72 @@ class EmployeeInvitationModelTests(TestCase):
 
         self.assertEqual(replacement.employee, self.employee)
 
+
+class EmployeeLoginTests(TestCase):
+    def setUp(self):
+        self.password = "safe-password-123"
+        self.active_employee = Employee.objects.create_user(
+            email="active@example.com",
+            password=self.password,
+            status=Employee.Status.ACTIVE,
+        )
+        self.deactivated_employee = Employee.objects.create_user(
+            email="deactivated@example.com",
+            password=self.password,
+            status=Employee.Status.DEACTIVATED,
+        )
+        self.admin_employee = Employee.objects.create_superuser(
+            email="admin@example.com",
+            password=self.password,
+        )
+
+    def test_login_page_uses_email_field(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'type="email"', html=False)
+        self.assertContains(response, "name=\"username\"", html=False)
+        self.assertContains(response, "Email")
+
+    def test_active_employee_can_log_in_with_email_and_password(self):
+        response = self.client.post(
+            reverse("login"),
+            {
+                "username": self.active_employee.email,
+                "password": self.password,
+            },
+        )
+
+        self.assertRedirects(response, "/analogs/")
+        self.assertEqual(
+            int(self.client.session["_auth_user_id"]),
+            self.active_employee.pk,
+        )
+
+    def test_deactivated_employee_cannot_log_in(self):
+        response = self.client.post(
+            reverse("login"),
+            {
+                "username": self.deactivated_employee.email,
+                "password": self.password,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Не удалось выполнить вход")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_admin_index_is_available_only_to_admins(self):
+        self.client.force_login(self.active_employee)
+
+        response = self.client.get("/admin/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response.url)
+
+    def test_admin_can_open_admin_index(self):
+        self.client.force_login(self.admin_employee)
+
+        response = self.client.get("/admin/")
+
+        self.assertEqual(response.status_code, 200)

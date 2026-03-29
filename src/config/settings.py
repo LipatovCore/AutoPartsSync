@@ -97,6 +97,9 @@ DATABASES = {
 }
 
 AUTH_USER_MODEL = "employees.Employee"
+AUTHENTICATION_BACKENDS = [
+    "employees.auth_backends.EmployeeAuthenticationBackend",
+]
 
 
 # Password validation
