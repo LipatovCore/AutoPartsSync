@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'analogs',
     'counterparties',
+    'employees',
 ]
 
 MIDDLEWARE = [
@@ -94,6 +95,8 @@ DATABASES = {
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
+AUTH_USER_MODEL = "employees.Employee"
 
 
 # Password validation
