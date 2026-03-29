@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Сотрудники | AutoPartsSync{% endblock %}
+
+{% block hero %}
+    <section class="hero">
+        <span class="eyebrow">Employee Auth</span>
+        <h1>Управление приглашениями сотрудников</h1>
+        <p>
+            Администратор создает учетные записи сотрудников и вручную передает им одноразовую ссылку
+            для установки пароля. Ссылка действует 24 часа и при перевыпуске сразу отзывает предыдущую.
+        </p>
+    </section>
+{% endblock %}
+
+{% block content %}
+    <div class="grid grid--two">
+        <section class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>Новое приглашение</h2>
+                    <p class="muted">Создает сотрудника со статусом <code>created</code> и сразу выпускает ссылку.</p>
+                </div>
+            </div>
+
+            <form method="post" action="{% url 'employees:create' %}">
+                {% csrf_token %}
+                {{ invitation_form.as_p }}
+                <button type="submit">Создать сотрудника и ссылку</button>
+            </form>
+
+            {% if invitation_url %}
+                <div class="panel" style="margin-top: 18px; padding: 18px;">
+                    <h3>Ссылка готова</h3>
+                    <p class="muted">Показывается один раз для сотрудника {{ invitation_email }}.</p>
+                    <input type="text" value="{{ invitation_url }}" readonly onclick="this.select();">
+                </div>
+            {% endif %}
+        </section>
+
+        <section class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>Сотрудники</h2>
+                    <p class="muted">Перевыпуск доступен только для сотрудников, которые еще не завершили активацию.</p>
+                </div>
+                <span class="tag">{{ employees|length }} записей</span>
+            </div>
+
+            <div class="entity-list">
+                {% for employee in employees %}
+                    <article class="entity-card">
+                        <div class="entity-card__top">
+                            <div>
+                                <h3 class="entity-card__title">{{ employee.email }}</h3>
+                                <p class="entity-card__meta">
+                                    Статус: {{ employee.get_status_display }}
+                                    <br>
+                                    Email подтвержден: {% if employee.email_verified %}да{% else %}нет{% endif %}
+                                </p>
+                            </div>
+                            <span class="tag">{{ employee.status }}</span>
+                        </div>
+
+                        {% with invitation=employee.active_invitations|first %}
+                            {% if invitation %}
+                                <p class="entity-card__meta">
+                                    Активное приглашение истекает: {{ invitation.expires_at|date:"d.m.Y H:i" }}
+                                </p>
+                            {% else %}
+                                <p class="entity-card__meta">Активного приглашения сейчас нет.</p>
+                            {% endif %}
+                        {% endwith %}
+
+                        {% if employee.status == "created" %}
+                            <div class="entity-card__footer">
+                                <form method="post" action="{% url 'employees:reissue-invitation' employee.pk %}">
+                                    {% csrf_token %}
+                                    <button type="submit">Перевыпустить ссылку</button>
+                                </form>
+                            </div>
+                        {% endif %}
+                    </article>
+                {% empty %}
+                    <div class="panel">
+                        <p class="muted">Сотрудники пока не добавлены.</p>
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+{% endblock %}

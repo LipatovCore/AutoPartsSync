@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib.auth.forms import AuthenticationForm
 from django.forms import EmailField, EmailInput, PasswordInput
 
@@ -21,6 +22,18 @@ class EmployeeAuthenticationForm(AuthenticationForm):
             attrs={
                 "autocomplete": "current-password",
                 "placeholder": "Введите пароль",
+            }
+        ),
+    )
+
+
+class EmployeeInvitationIssueForm(forms.Form):
+    email = EmailField(
+        label="Email сотрудника",
+        widget=EmailInput(
+            attrs={
+                "autocomplete": "email",
+                "placeholder": "employee@example.com",
             }
         ),
     )
