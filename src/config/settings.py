@@ -144,3 +144,20 @@ LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/analogs/"
 LOGOUT_REDIRECT_URL = "/accounts/login/"
 EMPLOYEE_INVITATION_TTL = timedelta(hours=24)
+EMPLOYEE_AUTH_RATE_LIMITS = {
+    "login": {
+        "attempts": 5,
+        "window_seconds": 300,
+        "block_seconds": 300,
+    },
+    "password_setup": {
+        "attempts": 5,
+        "window_seconds": 300,
+        "block_seconds": 600,
+    },
+    "invitation_reissue": {
+        "attempts": 10,
+        "window_seconds": 3600,
+        "block_seconds": 900,
+    },
+}

@@ -19,10 +19,40 @@ from employees.services.password_setup_service import (
     EmployeePasswordSetupService,
     EmployeePasswordSetupServiceError,
 )
+from employees.services.security_service import EmployeeSecurityService
 
 
 class EmployeeLoginView(LoginView):
     authentication_form = EmployeeAuthenticationForm
+    security_service = EmployeeSecurityService()
+
+    def post(self, request, *args, **kwargs):
+        identifier = (request.POST.get("username") or "").strip().lower()
+        rate_limit = self.security_service.check_rate_limit(
+            scope="login",
+            ip_address=_get_client_ip(request),
+            identifier=identifier,
+        )
+        if not rate_limit.allowed:
+            form = self.get_form()
+            form.add_error(
+                None,
+                (
+                    "Превышен лимит попыток входа. "
+                    f"Попробуйте снова через {rate_limit.retry_after_seconds} сек."
+                ),
+            )
+            return self.form_invalid(form)
+
+        return super().post(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        self.security_service.reset_rate_limit(
+            scope="login",
+            ip_address=_get_client_ip(self.request),
+            identifier=form.cleaned_data["username"].strip().lower(),
+        )
+        return super().form_valid(form)
 
 
 def _ensure_system_admin(request):
@@ -38,6 +68,13 @@ def _ensure_system_admin(request):
 def _build_invitation_url(request, raw_token: str) -> str:
     invitation_path = reverse("employees:set-password", args=[raw_token])
     return request.build_absolute_uri(invitation_path)
+
+
+def _get_client_ip(request) -> str:
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
 
 
 def employee_list(request):
@@ -111,6 +148,21 @@ def employee_reissue_invitation(request, employee_id: int):
         return access_response
 
     service = EmployeeInvitationService()
+    security_service = EmployeeSecurityService()
+    rate_limit = security_service.check_rate_limit(
+        scope="invitation_reissue",
+        ip_address=_get_client_ip(request),
+        identifier=str(employee_id),
+    )
+    if not rate_limit.allowed:
+        messages.error(
+            request,
+            (
+                "Превышен лимит попыток перевыпуска приглашения. "
+                f"Попробуйте снова через {rate_limit.retry_after_seconds} сек."
+            ),
+        )
+        return redirect(reverse("employees:list"))
 
     try:
         result = service.reissue_employee_invitation(
@@ -132,6 +184,25 @@ def employee_reissue_invitation(request, employee_id: int):
 
 def employee_set_password(request, token: str):
     service = EmployeePasswordSetupService()
+    security_service = EmployeeSecurityService()
+    rate_limit = security_service.check_rate_limit(
+        scope="password_setup",
+        ip_address=_get_client_ip(request),
+        identifier=token,
+    )
+    if not rate_limit.allowed:
+        return render(
+            request,
+            "employees/set_password.html",
+            {
+                "form": None,
+                "is_valid_link": False,
+                "error_message": (
+                    "Превышен лимит попыток установки пароля. "
+                    f"Попробуйте снова через {rate_limit.retry_after_seconds} сек."
+                ),
+            },
+        )
 
     try:
         invitation = service.get_invitation_for_token(raw_token=token)

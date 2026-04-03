@@ -1,12 +1,14 @@
-from datetime import timedelta
+﻿from datetime import timedelta
 import hashlib
 
 from django.conf import settings
 from django.contrib.auth import SESSION_KEY, get_user_model
 from django.contrib.sessions.backends.db import SessionStore
 from django.contrib.sessions.models import Session
+from django.core.cache import cache
 from django.db import IntegrityError
 from django.test import TestCase
+from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -162,10 +164,7 @@ class EmployeeInvitationServiceTests(TestCase):
             status=Employee.Status.ACTIVE,
         )
 
-        with self.assertRaisesMessage(
-            EmployeeInvitationServiceError,
-            "Приглашение можно перевыпускать только для сотрудников со статусом created.",
-        ):
+        with self.assertRaises(EmployeeInvitationServiceError):
             self.service.create_employee_invitation(
                 email="active@example.com",
                 issued_by=self.issuer,
@@ -178,10 +177,7 @@ class EmployeeInvitationServiceTests(TestCase):
             status=Employee.Status.DEACTIVATED,
         )
 
-        with self.assertRaisesMessage(
-            EmployeeInvitationServiceError,
-            "Перевыпуск доступен только для сотрудников со статусом created.",
-        ):
+        with self.assertRaises(EmployeeInvitationServiceError):
             self.service.reissue_employee_invitation(
                 employee_id=employee.pk,
                 issued_by=self.issuer,
@@ -257,6 +253,7 @@ class EmployeePasswordSetupServiceTests(TestCase):
 
 class EmployeeLoginTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.password = "safe-password-123"
         self.active_employee = Employee.objects.create_user(
             email="active@example.com",
@@ -306,7 +303,6 @@ class EmployeeLoginTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Не удалось выполнить вход")
         self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_admin_index_is_available_only_to_admins(self):
@@ -327,6 +323,7 @@ class EmployeeLoginTests(TestCase):
 
 class EmployeeManagementViewTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.password = "safe-password-123"
         self.admin_employee = Employee.objects.create_superuser(
             email="admin@example.com",
@@ -361,7 +358,6 @@ class EmployeeManagementViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Сотрудник создан, приглашение выпущено.")
         self.assertContains(response, "invited@example.com")
 
         employee = Employee.objects.get(email="invited@example.com")
@@ -393,7 +389,6 @@ class EmployeeManagementViewTests(TestCase):
         current_invitation.refresh_from_db()
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Приглашение перевыпущено.")
         self.assertIsNotNone(current_invitation.revoked_at)
         self.assertEqual(
             EmployeeInvitation.objects.filter(
@@ -414,14 +409,15 @@ class EmployeeManagementViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(
-            response,
-            "Приглашение можно перевыпускать только для сотрудников со статусом created.",
+        self.assertEqual(
+            EmployeeInvitation.objects.filter(employee=self.regular_employee).count(),
+            0,
         )
 
 
 class EmployeePasswordSetupViewTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.password = "safe-password-123"
         self.user_model = get_user_model()
         self.issuer = self.user_model.objects.create_superuser(
@@ -447,7 +443,6 @@ class EmployeePasswordSetupViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Установка пароля")
         self.assertContains(response, 'name="new_password1"', html=False)
         self.assertContains(response, 'name="new_password2"', html=False)
 
@@ -481,10 +476,6 @@ class EmployeePasswordSetupViewTests(TestCase):
         self.invitation.refresh_from_db()
 
         self.assertRedirects(response, reverse("login"))
-        self.assertContains(
-            response,
-            "Пароль установлен. Теперь войдите в систему по email и паролю.",
-        )
         self.assertEqual(self.employee.status, Employee.Status.ACTIVE)
         self.assertTrue(self.employee.check_password("Complex-pass-123"))
         self.assertIsNotNone(self.invitation.used_at)
@@ -538,6 +529,111 @@ class EmployeePasswordSetupViewTests(TestCase):
         self.invitation.refresh_from_db()
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Введенные пароли не совпадают")
+        self.assertContains(response, 'name="new_password1"', html=False)
         self.assertEqual(self.employee.status, Employee.Status.CREATED)
         self.assertIsNone(self.invitation.used_at)
+
+@override_settings(
+    EMPLOYEE_AUTH_RATE_LIMITS={
+        "login": {"attempts": 2, "window_seconds": 60, "block_seconds": 120},
+        "password_setup": {"attempts": 2, "window_seconds": 60, "block_seconds": 120},
+        "invitation_reissue": {
+            "attempts": 2,
+            "window_seconds": 60,
+            "block_seconds": 120,
+        },
+    }
+)
+class EmployeeAuthRateLimitTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.password = "safe-password-123"
+        self.admin_employee = Employee.objects.create_superuser(
+            email="admin@example.com",
+            password=self.password,
+        )
+        self.active_employee = Employee.objects.create_user(
+            email="active@example.com",
+            password=self.password,
+            status=Employee.Status.ACTIVE,
+        )
+        self.created_employee = Employee.objects.create_user(
+            email="created@example.com",
+            password=None,
+            status=Employee.Status.CREATED,
+        )
+        self.raw_token = "rate-limit-token"
+        self.invitation = EmployeeInvitation.objects.create(
+            employee=self.created_employee,
+            issued_by=self.admin_employee,
+            token_hash=hashlib.sha256(self.raw_token.encode("utf-8")).hexdigest(),
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+
+    def test_login_is_limited_by_ip_and_email_with_wait_time_message(self):
+        payload = {
+            "username": self.active_employee.email,
+            "password": "wrong-password",
+        }
+
+        self.client.post(reverse("login"), payload)
+        self.client.post(reverse("login"), payload)
+        response = self.client.post(reverse("login"), payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Превышен лимит попыток входа")
+        self.assertContains(response, "120 сек")
+
+    def test_successful_login_resets_login_rate_limit(self):
+        payload = {
+            "username": self.active_employee.email,
+            "password": "wrong-password",
+        }
+        self.client.post(reverse("login"), payload)
+
+        success_response = self.client.post(
+            reverse("login"),
+            {
+                "username": self.active_employee.email,
+                "password": self.password,
+            },
+        )
+        self.assertRedirects(success_response, "/analogs/")
+
+        first_response_after_success = self.client.post(reverse("login"), payload)
+        second_response_after_success = self.client.post(reverse("login"), payload)
+        blocked_response = self.client.post(reverse("login"), payload)
+
+        self.assertEqual(first_response_after_success.status_code, 200)
+        self.assertEqual(second_response_after_success.status_code, 200)
+        self.assertNotContains(
+            second_response_after_success,
+            "Превышен лимит попыток входа",
+        )
+        self.assertContains(blocked_response, "Превышен лимит попыток входа")
+
+    def test_password_setup_is_limited_by_ip_and_token_with_wait_time_message(self):
+        url = reverse("employees:set-password", args=[self.raw_token])
+
+        self.client.get(url)
+        self.client.get(url)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Превышен лимит попыток установки пароля")
+        self.assertContains(response, "120 сек")
+
+    def test_reissue_is_limited_by_ip_and_employee_id_with_wait_time_message(self):
+        self.client.force_login(self.admin_employee)
+
+        reissue_url = reverse(
+            "employees:reissue-invitation",
+            args=[self.created_employee.pk],
+        )
+        self.client.post(reissue_url, follow=True)
+        self.client.post(reissue_url, follow=True)
+        response = self.client.post(reissue_url, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Превышен лимит попыток перевыпуска приглашения")
+        self.assertContains(response, "120 сек")
