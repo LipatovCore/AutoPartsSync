@@ -3,6 +3,7 @@ import hashlib
 
 from django.conf import settings
 from django.contrib.auth import SESSION_KEY, get_user_model
+from django.contrib.auth.models import Group
 from django.contrib.sessions.backends.db import SessionStore
 from django.contrib.sessions.models import Session
 from django.core.cache import cache
@@ -13,6 +14,14 @@ from django.urls import reverse
 from django.utils import timezone
 
 from employees.models import Employee, EmployeeAccessAuditEvent, EmployeeInvitation
+from employees.permissions import (
+    ADMIN_GROUP_NAME,
+    DEFAULT_GROUP_PERMISSIONS,
+    MANAGE_EMPLOYEE_ACCESS,
+    USER_GROUP_NAME,
+    VIEW_EMPLOYEE_ACCESS_AUDIT,
+    ensure_default_employee_groups,
+)
 from employees.services.access_service import (
     EmployeeAccessService,
     EmployeeAccessServiceError,
@@ -55,6 +64,35 @@ class EmployeeManagerTests(TestCase):
         self.assertTrue(admin.is_staff)
         self.assertTrue(admin.is_superuser)
         self.assertEqual(admin.status, Employee.Status.ACTIVE)
+
+
+class EmployeePermissionBootstrapTests(TestCase):
+    def test_default_groups_are_created_with_expected_permissions(self):
+        admin_group = Group.objects.get(name=ADMIN_GROUP_NAME)
+        user_group = Group.objects.get(name=USER_GROUP_NAME)
+
+        self.assertSetEqual(
+            {permission.codename for permission in admin_group.permissions.all()},
+            {
+                MANAGE_EMPLOYEE_ACCESS.split(".", 1)[1],
+                VIEW_EMPLOYEE_ACCESS_AUDIT.split(".", 1)[1],
+            },
+        )
+        self.assertFalse(user_group.permissions.exists())
+
+    def test_default_group_sync_is_idempotent(self):
+        Group.objects.get(name=ADMIN_GROUP_NAME).permissions.clear()
+
+        ensure_default_employee_groups()
+
+        admin_group = Group.objects.get(name=ADMIN_GROUP_NAME)
+        self.assertSetEqual(
+            {permission.codename for permission in admin_group.permissions.all()},
+            {
+                permission_name.split(".", 1)[1]
+                for permission_name in DEFAULT_GROUP_PERMISSIONS[ADMIN_GROUP_NAME]
+            },
+        )
 
 
 class EmployeeInvitationModelTests(TestCase):

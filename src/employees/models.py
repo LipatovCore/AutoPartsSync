@@ -32,6 +32,16 @@ class Employee(AbstractUser):
         verbose_name = "Сотрудник"
         verbose_name_plural = "Сотрудники"
         ordering = ["email"]
+        permissions = [
+            (
+                "manage_employee_access",
+                "Can manage employee invitations and access state",
+            ),
+            (
+                "view_employee_access_audit",
+                "Can view employee access audit log",
+            ),
+        ]
 
     def __str__(self):
         return self.email

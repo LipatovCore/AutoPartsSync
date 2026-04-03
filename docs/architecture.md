@@ -72,6 +72,9 @@
 - `employees.auth_backends`
   Содержит `EmployeeAuthenticationBackend`, который разрешает вход только активным с точки зрения доменного статуса сотрудникам и использует email как идентификатор.
 
+- `employees.permissions`
+  Содержит канонические имена групп и permissions employee-auth первой версии, а также синхронизацию групп `admin` и `user` через `post_migrate`.
+
 - `employees.views`
   Содержит `EmployeeLoginView`, admin-only view для списка сотрудников, создания сотрудника, перевыпуска приглашения, reset доступа и деактивации сотрудника, а также публичный view установки пароля по invite-токену.
 
@@ -203,6 +206,10 @@
 
 - `employees.auth_backends`
   Реализован backend `EmployeeAuthenticationBackend`, который запрещает вход сотрудникам со статусом `deactivated`.
+
+- `employees.permissions`
+  Реализован модуль канонических permissions employee-auth первой версии.
+  Сейчас он фиксирует группы `admin` и `user`, права `employees.manage_employee_access` и `employees.view_employee_access_audit`, а также автоматически синхронизирует состав этих групп после миграций.
 
 - `employees.views`
   Реализованы `EmployeeLoginView` для маршрута `/accounts/login/`, employee-management view для создания сотрудника, перевыпуска приглашения и деактивации сотрудника, а также публичный экран `/employees/invitations/<token>/set-password/`.
