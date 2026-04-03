@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -15,6 +15,7 @@
             --accent: #8bc5ff;
             --accent-strong: #5caeff;
             --error: #ff9db0;
+            --success: #96f0bf;
         }
 
         * {
@@ -100,19 +101,28 @@
         .message {
             margin-top: 18px;
             padding: 12px 14px;
-            border: 1px solid rgba(255, 157, 176, 0.25);
             border-radius: 14px;
-            background: rgba(255, 157, 176, 0.08);
-            color: #ffd8df;
             font-size: 14px;
             line-height: 1.5;
+        }
+
+        .message--error {
+            border: 1px solid rgba(255, 157, 176, 0.25);
+            background: rgba(255, 157, 176, 0.08);
+            color: #ffd8df;
+        }
+
+        .message--success {
+            border: 1px solid rgba(150, 240, 191, 0.25);
+            background: rgba(150, 240, 191, 0.08);
+            color: #d8ffe9;
         }
 
         form {
             margin-top: 24px;
         }
 
-        form p {
+        .field {
             margin: 0 0 16px;
         }
 
@@ -143,7 +153,6 @@
             box-shadow: 0 0 0 3px rgba(92, 174, 255, 0.14);
         }
 
-        .helptext,
         ul.errorlist {
             margin: 8px 0 0;
             padding: 0;
@@ -201,35 +210,53 @@
         <h1>Вход в систему</h1>
         <p class="subtitle">Введите логин и пароль для доступа к рабочей панели.</p>
 
-        {% if messages %}
+        {% if form.non_field_errors %}
+            <div class="message message--error">{{ form.non_field_errors|striptags }}</div>
+        {% elif form.errors %}
+            <div class="message message--error">Не удалось выполнить вход. Проверьте логин и пароль.</div>
+        {% elif next and user.is_authenticated %}
+            <div class="message message--error">У текущей учетной записи нет доступа к этой странице.</div>
+        {% elif next %}
+            <div class="message message--error">Не удалось выполнить вход. Проверьте логин и пароль.</div>
+        {% endif %}
+
+        {% if messages and not form.errors %}
             {% for message in messages %}
-                <div class="message">
-                    {{ message }}
-                </div>
+                <div class="message message--success">{{ message }}</div>
             {% endfor %}
-        {% endif %}
-
-        {% if form.errors %}
-            <div class="message">
-                Не удалось выполнить вход. Проверьте логин и пароль.
-            </div>
-        {% endif %}
-
-        {% if next %}
-            {% if user.is_authenticated %}
-                <div class="message">
-                    У текущей учетной записи нет доступа к этой странице.
-                </div>
-            {% else %}
-                <div class="message">
-                    Выполните вход, чтобы открыть защищенный раздел.
-                </div>
-            {% endif %}
         {% endif %}
 
         <form method="post">
             {% csrf_token %}
-            {{ form.as_p }}
+
+            <div class="field">
+                <label for="id_username">Email</label>
+                <input
+                    type="email"
+                    name="username"
+                    id="id_username"
+                    autocomplete="email"
+                    placeholder="name@example.com"
+                    value="{{ form.username.value|default_if_none:'' }}"
+                    autofocus
+                    required
+                >
+                {{ form.username.errors }}
+            </div>
+
+            <div class="field">
+                <label for="id_password">Пароль</label>
+                <input
+                    type="password"
+                    name="password"
+                    id="id_password"
+                    autocomplete="current-password"
+                    placeholder="Введите пароль"
+                    required
+                >
+                {{ form.password.errors }}
+            </div>
+
             <input type="hidden" name="next" value="{{ next }}">
             <button class="button" type="submit">Войти</button>
         </form>
