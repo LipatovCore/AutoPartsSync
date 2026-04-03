@@ -74,3 +74,63 @@ class EmployeeInvitation(models.Model):
 
     def __str__(self):
         return f"Invitation for {self.employee.email}"
+
+
+class EmployeeAccessAuditEvent(models.Model):
+    class EventType(models.TextChoices):
+        EMPLOYEE_CREATED = "employee_created", "Сотрудник создан"
+        INVITATION_ISSUED = "invitation_issued", "Приглашение выпущено"
+        INVITATION_REVOKED = "invitation_revoked", "Приглашение отозвано"
+        ACTIVATION_SUCCEEDED = "activation_succeeded", "Активация успешна"
+        ACTIVATION_FAILED = "activation_failed", "Активация неуспешна"
+        ACCESS_RESET = "access_reset", "Доступ сброшен"
+        EMPLOYEE_DEACTIVATED = "employee_deactivated", "Сотрудник деактивирован"
+
+    event_type = models.CharField(
+        "Тип события",
+        max_length=32,
+        choices=EventType.choices,
+    )
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        related_name="access_audit_events",
+        verbose_name="Сотрудник",
+        blank=True,
+        null=True,
+    )
+    actor = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        related_name="performed_access_audit_events",
+        verbose_name="Инициатор",
+        blank=True,
+        null=True,
+    )
+    invitation = models.ForeignKey(
+        EmployeeInvitation,
+        on_delete=models.SET_NULL,
+        related_name="audit_events",
+        verbose_name="Приглашение",
+        blank=True,
+        null=True,
+    )
+    ip_address = models.GenericIPAddressField(
+        "IP-адрес",
+        blank=True,
+        null=True,
+    )
+    metadata = models.JSONField("Метаданные", default=dict, blank=True)
+    created_at = models.DateTimeField("Создан", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Событие аудита доступа"
+        verbose_name_plural = "События аудита доступа"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["event_type", "created_at"], name="employee_audit_type_idx"),
+            models.Index(fields=["employee", "created_at"], name="employee_audit_emp_idx"),
+        ]
+
+    def __str__(self):
+        return self.get_event_type_display()

@@ -15,6 +15,7 @@ from employees.services.invitation_service import (
     EmployeeInvitationService,
     EmployeeInvitationServiceError,
 )
+from employees.services.audit_service import EmployeeAccessAuditService
 from employees.services.password_setup_service import (
     EmployeePasswordSetupService,
     EmployeePasswordSetupServiceError,
@@ -144,6 +145,7 @@ def employee_create(request):
         result = service.create_employee_invitation(
             email=form.cleaned_data["email"],
             issued_by=request.user,
+            ip_address=_get_client_ip(request),
         )
     except EmployeeInvitationServiceError as error:
         messages.error(request, str(error))
@@ -190,6 +192,7 @@ def employee_reissue_invitation(request, employee_id: int):
         result = service.reissue_employee_invitation(
             employee_id=employee_id,
             issued_by=request.user,
+            ip_address=_get_client_ip(request),
         )
     except EmployeeInvitationServiceError as error:
         messages.error(request, str(error))
@@ -206,13 +209,20 @@ def employee_reissue_invitation(request, employee_id: int):
 
 def employee_set_password(request, token: str):
     service = EmployeePasswordSetupService()
+    audit_service = EmployeeAccessAuditService()
     security_service = EmployeeSecurityService()
+    client_ip = _get_client_ip(request)
     rate_limit = security_service.check_rate_limit(
         scope="password_setup",
-        ip_address=_get_client_ip(request),
+        ip_address=client_ip,
         identifier=token,
     )
     if not rate_limit.allowed:
+        audit_service.record_activation_failed(
+            raw_token=token,
+            ip_address=client_ip,
+            reason="rate_limited",
+        )
         return render(
             request,
             "employees/set_password.html",
@@ -229,6 +239,11 @@ def employee_set_password(request, token: str):
     try:
         invitation = service.get_invitation_for_token(raw_token=token)
     except EmployeePasswordSetupServiceError as error:
+        audit_service.record_activation_failed(
+            raw_token=token,
+            ip_address=client_ip,
+            reason="invalid_link",
+        )
         return render(
             request,
             "employees/set_password.html",
@@ -246,8 +261,14 @@ def employee_set_password(request, token: str):
             service.activate_employee_with_password(
                 raw_token=token,
                 password=form.cleaned_data["new_password1"],
+                ip_address=client_ip,
             )
         except EmployeePasswordSetupServiceError as error:
+            audit_service.record_activation_failed(
+                raw_token=token,
+                ip_address=client_ip,
+                reason="invalid_link",
+            )
             return render(
                 request,
                 "employees/set_password.html",

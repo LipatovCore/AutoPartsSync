@@ -13,6 +13,15 @@ class EmployeeInvitationRepository:
     def create_employee(self, *, email: str) -> Employee:
         return Employee.objects.create_user(email=email, password=None)
 
+    def list_active_invitations(self, *, employee: Employee) -> list[EmployeeInvitation]:
+        return list(
+            EmployeeInvitation.objects.filter(
+                employee=employee,
+                used_at__isnull=True,
+                revoked_at__isnull=True,
+            ).order_by("-created_at")
+        )
+
     def revoke_active_invitations(self, *, employee: Employee, revoked_at) -> int:
         return (
             EmployeeInvitation.objects.filter(

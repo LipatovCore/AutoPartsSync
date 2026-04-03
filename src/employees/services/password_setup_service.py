@@ -7,8 +7,9 @@ from django.contrib.sessions.models import Session
 from django.db import transaction
 from django.utils import timezone
 
-from employees.models import Employee, EmployeeInvitation
+from employees.models import Employee, EmployeeAccessAuditEvent, EmployeeInvitation
 from employees.repositories.invitation_repository import EmployeeInvitationRepository
+from employees.services.audit_service import EmployeeAccessAuditService
 
 
 class EmployeePasswordSetupServiceError(Exception):
@@ -20,8 +21,13 @@ class EmployeePasswordSetupService:
         "Ссылка недействительна. Обратитесь к администратору, чтобы получить новую ссылку."
     )
 
-    def __init__(self, repository: EmployeeInvitationRepository | None = None):
+    def __init__(
+        self,
+        repository: EmployeeInvitationRepository | None = None,
+        audit_service: EmployeeAccessAuditService | None = None,
+    ):
         self.repository = repository or EmployeeInvitationRepository()
+        self.audit_service = audit_service or EmployeeAccessAuditService()
 
     def get_invitation_for_token(self, *, raw_token: str) -> EmployeeInvitation:
         invitation = self._get_valid_invitation(raw_token=raw_token)
@@ -32,6 +38,7 @@ class EmployeePasswordSetupService:
         *,
         raw_token: str,
         password: str,
+        ip_address: str | None = None,
     ) -> EmployeeInvitation:
         invitation = self._get_valid_invitation(raw_token=raw_token)
         employee = invitation.employee
@@ -43,6 +50,12 @@ class EmployeePasswordSetupService:
             self.repository.activate_employee(employee=employee)
             self.repository.mark_invitation_used(invitation=invitation, used_at=used_at)
             self._terminate_employee_sessions(employee=employee)
+            self.audit_service.record_event(
+                event_type=EmployeeAccessAuditEvent.EventType.ACTIVATION_SUCCEEDED,
+                employee=employee,
+                invitation=invitation,
+                ip_address=ip_address,
+            )
 
         return invitation
 

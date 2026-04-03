@@ -12,7 +12,7 @@ from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from employees.models import Employee, EmployeeInvitation
+from employees.models import Employee, EmployeeAccessAuditEvent, EmployeeInvitation
 from employees.services.invitation_service import (
     EmployeeInvitationService,
     EmployeeInvitationServiceError,
@@ -127,6 +127,15 @@ class EmployeeInvitationServiceTests(TestCase):
             (before_call + settings.EMPLOYEE_INVITATION_TTL).timestamp(),
             delta=5,
         )
+        self.assertEqual(
+            list(
+                EmployeeAccessAuditEvent.objects.values_list("event_type", flat=True)
+            ),
+            [
+                EmployeeAccessAuditEvent.EventType.INVITATION_ISSUED,
+                EmployeeAccessAuditEvent.EventType.EMPLOYEE_CREATED,
+            ],
+        )
 
     def test_reissue_revokes_previous_invitation_and_creates_new_one(self):
         employee = Employee.objects.create_user(
@@ -155,6 +164,18 @@ class EmployeeInvitationServiceTests(TestCase):
                 revoked_at__isnull=True,
             ).count(),
             1,
+        )
+        self.assertEqual(
+            list(
+                EmployeeAccessAuditEvent.objects.filter(employee=employee).values_list(
+                    "event_type",
+                    flat=True,
+                )
+            )[:2],
+            [
+                EmployeeAccessAuditEvent.EventType.INVITATION_ISSUED,
+                EmployeeAccessAuditEvent.EventType.INVITATION_REVOKED,
+            ],
         )
 
     def test_create_employee_invitation_rejects_active_employee(self):
@@ -222,6 +243,13 @@ class EmployeePasswordSetupServiceTests(TestCase):
         self.assertIsNotNone(self.invitation.used_at)
         self.assertFalse(
             Session.objects.filter(session_key=session.session_key).exists()
+        )
+        self.assertTrue(
+            EmployeeAccessAuditEvent.objects.filter(
+                event_type=EmployeeAccessAuditEvent.EventType.ACTIVATION_SUCCEEDED,
+                employee=self.employee,
+                invitation=self.invitation,
+            ).exists()
         )
 
     def test_activate_employee_with_password_rejects_expired_invitation(self):
@@ -457,6 +485,14 @@ class EmployeePasswordSetupViewTests(TestCase):
             EmployeePasswordSetupService.INVALID_LINK_MESSAGE,
         )
         self.assertNotContains(response, 'name="new_password1"', html=False)
+        failed_event = EmployeeAccessAuditEvent.objects.get(
+            event_type=EmployeeAccessAuditEvent.EventType.ACTIVATION_FAILED
+        )
+        self.assertEqual(
+            failed_event.metadata["token_hash"],
+            hashlib.sha256("unknown-token".encode("utf-8")).hexdigest(),
+        )
+        self.assertEqual(failed_event.metadata["reason"], "invalid_link")
 
     def test_successful_password_setup_redirects_to_login_and_activates_employee(self):
         session = SessionStore()
