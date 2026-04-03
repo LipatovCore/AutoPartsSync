@@ -68,6 +68,12 @@ class EmployeeInvitationRepository:
         employee.save(update_fields=["status", "email_verified", "updated_at"])
         return employee
 
+    def reset_employee_access(self, *, employee: Employee) -> Employee:
+        employee.set_unusable_password()
+        employee.status = Employee.Status.CREATED
+        employee.save(update_fields=["password", "status", "updated_at"])
+        return employee
+
     def deactivate_employee(self, *, employee: Employee) -> Employee:
         employee.status = Employee.Status.DEACTIVATED
         employee.save(update_fields=["status", "updated_at"])

@@ -346,6 +346,91 @@ class EmployeeAccessServiceTests(TestCase):
                 actor=self.admin_employee,
             )
 
+    def test_reset_employee_access_creates_new_invitation_and_records_audit(self):
+        session = SessionStore()
+        session[SESSION_KEY] = str(self.target_employee.pk)
+        session.create()
+        existing_invitation = EmployeeInvitation.objects.create(
+            employee=self.target_employee,
+            issued_by=self.admin_employee,
+            token_hash="old-reset-token-hash",
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+
+        result = self.service.reset_employee_access(
+            employee_id=self.target_employee.pk,
+            actor=self.admin_employee,
+            ip_address="127.0.0.1",
+        )
+
+        self.target_employee.refresh_from_db()
+        existing_invitation.refresh_from_db()
+
+        self.assertEqual(self.target_employee.status, Employee.Status.CREATED)
+        self.assertFalse(self.target_employee.has_usable_password())
+        self.assertFalse(
+            Session.objects.filter(session_key=session.session_key).exists()
+        )
+        self.assertIsNotNone(existing_invitation.revoked_at)
+        self.assertEqual(
+            hashlib.sha256(result.raw_token.encode("utf-8")).hexdigest(),
+            result.invitation.token_hash,
+        )
+        self.assertEqual(
+            EmployeeInvitation.objects.filter(
+                employee=self.target_employee,
+                used_at__isnull=True,
+                revoked_at__isnull=True,
+            ).count(),
+            1,
+        )
+        self.assertTrue(
+            EmployeeAccessAuditEvent.objects.filter(
+                event_type=EmployeeAccessAuditEvent.EventType.ACCESS_RESET,
+                employee=self.target_employee,
+                actor=self.admin_employee,
+                invitation=result.invitation,
+                ip_address="127.0.0.1",
+            ).exists()
+        )
+        self.assertTrue(
+            EmployeeAccessAuditEvent.objects.filter(
+                event_type=EmployeeAccessAuditEvent.EventType.INVITATION_REVOKED,
+                employee=self.target_employee,
+                invitation=existing_invitation,
+            ).exists()
+        )
+        self.assertTrue(
+            EmployeeAccessAuditEvent.objects.filter(
+                event_type=EmployeeAccessAuditEvent.EventType.INVITATION_ISSUED,
+                employee=self.target_employee,
+                invitation=result.invitation,
+            ).exists()
+        )
+
+    def test_reset_employee_access_rejects_non_active_employee(self):
+        self.target_employee.status = Employee.Status.CREATED
+        self.target_employee.save(update_fields=["status", "updated_at"])
+
+        with self.assertRaisesMessage(
+            EmployeeAccessServiceError,
+            "Сброс доступа доступен только для активных сотрудников.",
+        ):
+            self.service.reset_employee_access(
+                employee_id=self.target_employee.pk,
+                actor=self.admin_employee,
+            )
+
+    def test_reset_employee_access_rejects_self_reset(self):
+        with self.assertRaisesMessage(
+            EmployeeAccessServiceError,
+            "Нельзя сбрасывать доступ для собственной учетной записи.",
+        ):
+            self.service.reset_employee_access(
+                employee_id=self.admin_employee.pk,
+                actor=self.admin_employee,
+            )
+
 
 class EmployeeSessionServiceTests(TestCase):
     def setUp(self):
@@ -588,6 +673,56 @@ class EmployeeManagementViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.admin_employee.status, Employee.Status.ACTIVE)
         self.assertContains(response, "Нельзя деактивировать собственную учетную запись.")
+
+    def test_admin_can_reset_active_employee_access(self):
+        session = SessionStore()
+        session[SESSION_KEY] = str(self.regular_employee.pk)
+        session.create()
+        self.client.force_login(self.admin_employee)
+
+        response = self.client.post(
+            reverse("employees:reset-access", args=[self.regular_employee.pk]),
+            follow=True,
+        )
+
+        self.regular_employee.refresh_from_db()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.regular_employee.status, Employee.Status.CREATED)
+        self.assertFalse(self.regular_employee.has_usable_password())
+        self.assertFalse(
+            Session.objects.filter(session_key=session.session_key).exists()
+        )
+        self.assertContains(
+            response,
+            "Доступ сотрудника сброшен. Новая ссылка на установку пароля готова.",
+        )
+        self.assertContains(response, self.regular_employee.email)
+        self.assertContains(response, "/employees/invitations/")
+        self.assertTrue(
+            EmployeeAccessAuditEvent.objects.filter(
+                event_type=EmployeeAccessAuditEvent.EventType.ACCESS_RESET,
+                employee=self.regular_employee,
+                actor=self.admin_employee,
+            ).exists()
+        )
+
+    def test_admin_cannot_reset_own_access(self):
+        self.client.force_login(self.admin_employee)
+
+        response = self.client.post(
+            reverse("employees:reset-access", args=[self.admin_employee.pk]),
+            follow=True,
+        )
+
+        self.admin_employee.refresh_from_db()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.admin_employee.status, Employee.Status.ACTIVE)
+        self.assertContains(
+            response,
+            "Нельзя сбрасывать доступ для собственной учетной записи.",
+        )
 
 
 class EmployeePasswordSetupViewTests(TestCase):

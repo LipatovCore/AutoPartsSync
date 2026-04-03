@@ -233,6 +233,36 @@ def employee_deactivate(request, employee_id: int):
     return redirect(reverse("employees:list"))
 
 
+@require_POST
+def employee_reset_access(request, employee_id: int):
+    access_response = _ensure_system_admin(request)
+    if access_response is not None:
+        return access_response
+
+    service = EmployeeAccessService()
+
+    try:
+        result = service.reset_employee_access(
+            employee_id=employee_id,
+            actor=request.user,
+            ip_address=_get_client_ip(request),
+        )
+    except EmployeeAccessServiceError as error:
+        messages.error(request, str(error))
+        return redirect(reverse("employees:list"))
+
+    request.session["employee_invitation_url"] = _build_invitation_url(
+        request,
+        result.raw_token,
+    )
+    request.session["employee_invitation_email"] = result.employee.email
+    messages.success(
+        request,
+        "Доступ сотрудника сброшен. Новая ссылка на установку пароля готова.",
+    )
+    return redirect(reverse("employees:list"))
+
+
 def employee_set_password(request, token: str):
     service = EmployeePasswordSetupService()
     audit_service = EmployeeAccessAuditService()

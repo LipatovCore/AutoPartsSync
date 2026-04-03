@@ -79,6 +79,11 @@
                                         {% csrf_token %}
                                         <button type="submit">Перевыпустить ссылку</button>
                                     </form>
+                                {% elif employee.status == "active" %}
+                                    <form method="post" action="{% url 'employees:reset-access' employee.pk %}">
+                                        {% csrf_token %}
+                                        <button type="submit">Сбросить доступ</button>
+                                    </form>
                                 {% endif %}
 
                                 <form method="post" action="{% url 'employees:deactivate' employee.pk %}">
