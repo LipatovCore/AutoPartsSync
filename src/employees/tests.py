@@ -21,6 +21,7 @@ from employees.services.password_setup_service import (
     EmployeePasswordSetupService,
     EmployeePasswordSetupServiceError,
 )
+from employees.services.session_service import EmployeeSessionService
 
 
 class EmployeeManagerTests(TestCase):
@@ -277,6 +278,45 @@ class EmployeePasswordSetupServiceTests(TestCase):
                 raw_token=self.raw_token,
                 password="Complex-pass-123",
             )
+
+
+class EmployeeSessionServiceTests(TestCase):
+    def setUp(self):
+        self.service = EmployeeSessionService()
+        self.employee = Employee.objects.create_user(
+            email="active@example.com",
+            password="safe-password-123",
+            status=Employee.Status.ACTIVE,
+        )
+        self.other_employee = Employee.objects.create_user(
+            email="other@example.com",
+            password="safe-password-123",
+            status=Employee.Status.ACTIVE,
+        )
+
+    def _create_session_for_employee(self, employee: Employee) -> str:
+        session = SessionStore()
+        session[SESSION_KEY] = str(employee.pk)
+        session.create()
+        return session.session_key
+
+    def test_terminate_employee_sessions_deletes_only_target_employee_sessions(self):
+        target_session_key = self._create_session_for_employee(self.employee)
+        other_session_key = self._create_session_for_employee(self.other_employee)
+
+        deleted_count = self.service.terminate_employee_sessions(employee=self.employee)
+
+        self.assertEqual(deleted_count, 1)
+        self.assertFalse(Session.objects.filter(session_key=target_session_key).exists())
+        self.assertTrue(Session.objects.filter(session_key=other_session_key).exists())
+
+    def test_terminate_employee_sessions_returns_zero_when_employee_has_no_sessions(self):
+        other_session_key = self._create_session_for_employee(self.other_employee)
+
+        deleted_count = self.service.terminate_employee_sessions(employee=self.employee)
+
+        self.assertEqual(deleted_count, 0)
+        self.assertTrue(Session.objects.filter(session_key=other_session_key).exists())
 
 
 class EmployeeLoginTests(TestCase):

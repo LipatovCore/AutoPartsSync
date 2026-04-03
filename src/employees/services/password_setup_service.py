@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import hashlib
 
-from django.contrib.auth import SESSION_KEY
-from django.contrib.sessions.models import Session
 from django.db import transaction
 from django.utils import timezone
 
 from employees.models import Employee, EmployeeAccessAuditEvent, EmployeeInvitation
 from employees.repositories.invitation_repository import EmployeeInvitationRepository
 from employees.services.audit_service import EmployeeAccessAuditService
+from employees.services.session_service import EmployeeSessionService
 
 
 class EmployeePasswordSetupServiceError(Exception):
@@ -25,9 +24,11 @@ class EmployeePasswordSetupService:
         self,
         repository: EmployeeInvitationRepository | None = None,
         audit_service: EmployeeAccessAuditService | None = None,
+        session_service: EmployeeSessionService | None = None,
     ):
         self.repository = repository or EmployeeInvitationRepository()
         self.audit_service = audit_service or EmployeeAccessAuditService()
+        self.session_service = session_service or EmployeeSessionService()
 
     def get_invitation_for_token(self, *, raw_token: str) -> EmployeeInvitation:
         invitation = self._get_valid_invitation(raw_token=raw_token)
@@ -49,7 +50,7 @@ class EmployeePasswordSetupService:
             employee.save(update_fields=["password"])
             self.repository.activate_employee(employee=employee)
             self.repository.mark_invitation_used(invitation=invitation, used_at=used_at)
-            self._terminate_employee_sessions(employee=employee)
+            self.session_service.terminate_employee_sessions(employee=employee)
             self.audit_service.record_event(
                 event_type=EmployeeAccessAuditEvent.EventType.ACTIVATION_SUCCEEDED,
                 employee=employee,
@@ -73,15 +74,3 @@ class EmployeePasswordSetupService:
             raise EmployeePasswordSetupServiceError(self.INVALID_LINK_MESSAGE)
 
         return invitation
-
-    def _terminate_employee_sessions(self, *, employee: Employee) -> None:
-        employee_id = str(employee.pk)
-        sessions_to_delete: list[str] = []
-
-        for session in Session.objects.all():
-            session_data = session.get_decoded()
-            if session_data.get(SESSION_KEY) == employee_id:
-                sessions_to_delete.append(session.session_key)
-
-        if sessions_to_delete:
-            Session.objects.filter(session_key__in=sessions_to_delete).delete()

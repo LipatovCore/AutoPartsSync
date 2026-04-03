@@ -211,6 +211,11 @@
 - `employees.services.password_setup_service`
   Реализован сценарий установки пароля по одноразовому токену с единым сообщением об ошибке для невалидной ссылки, переводом сотрудника в `active`, инвалидированием токена и завершением старых сессий.
 
+- `employees.services.session_service`
+  Реализован отдельный сервис завершения сессий сотрудника через `django.contrib.sessions`.
+  Текущий механизм ищет активные серверные сессии по `SESSION_KEY` и удаляет только сессии целевого сотрудника.
+  Этот сервис используется как общий механизм инвалидирования сессий для activation/reset/deactivation сценариев employee-auth.
+
 - `employees.services.security_service`
   Реализован сервис ограничения частоты запросов для критичных auth-сценариев employee-auth. Ключи лимитов строятся по паре `IP + identifier` и используются в `EmployeeLoginView`, `employee_set_password` и `employee_reissue_invitation`.
 
