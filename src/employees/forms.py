@@ -1,11 +1,20 @@
-from django import forms
+﻿from django import forms
 from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm
 from django.forms import EmailField, EmailInput, PasswordInput
 
 
 class EmployeeAuthenticationForm(AuthenticationForm):
+    error_messages = {
+        "invalid_login": "Не удалось выполнить вход. Проверьте email и пароль.",
+        "inactive": "Учетная запись отключена.",
+    }
+
     username = EmailField(
         label="Email",
+        error_messages={
+            "required": "Введите email.",
+            "invalid": "Введите корректный email.",
+        },
         widget=EmailInput(
             attrs={
                 "autofocus": True,
@@ -18,6 +27,7 @@ class EmployeeAuthenticationForm(AuthenticationForm):
     password = AuthenticationForm.base_fields["password"].__class__(
         label="Пароль",
         strip=False,
+        error_messages={"required": "Введите пароль."},
         widget=PasswordInput(
             attrs={
                 "autocomplete": "current-password",

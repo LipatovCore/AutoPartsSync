@@ -14,6 +14,8 @@ from django.utils import timezone
 class RateLimitResult:
     allowed: bool
     retry_after_seconds: int
+    attempts_left: int | None = None
+    attempts_limit: int | None = None
 
 
 class EmployeeSecurityService:
@@ -34,6 +36,8 @@ class EmployeeSecurityService:
             return RateLimitResult(
                 allowed=False,
                 retry_after_seconds=self._seconds_until(blocked_until),
+                attempts_left=0,
+                attempts_limit=rate_limit_config["attempts"],
             )
 
         counter_key = self._build_counter_key(
@@ -46,7 +50,12 @@ class EmployeeSecurityService:
             window_seconds=rate_limit_config["window_seconds"],
         )
         if attempts <= rate_limit_config["attempts"]:
-            return RateLimitResult(allowed=True, retry_after_seconds=0)
+            return RateLimitResult(
+                allowed=True,
+                retry_after_seconds=0,
+                attempts_left=max(rate_limit_config["attempts"] - attempts, 0),
+                attempts_limit=rate_limit_config["attempts"],
+            )
 
         blocked_until = timezone.now() + timedelta(
             seconds=rate_limit_config["block_seconds"]
@@ -63,6 +72,8 @@ class EmployeeSecurityService:
         return RateLimitResult(
             allowed=False,
             retry_after_seconds=rate_limit_config["block_seconds"],
+            attempts_left=0,
+            attempts_limit=rate_limit_config["attempts"],
         )
 
     def reset_rate_limit(

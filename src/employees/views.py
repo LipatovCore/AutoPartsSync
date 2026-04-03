@@ -1,4 +1,4 @@
-from django.contrib import messages
+﻿from django.contrib import messages
 from django.contrib.auth.views import LoginView
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
@@ -33,6 +33,8 @@ class EmployeeLoginView(LoginView):
             ip_address=_get_client_ip(request),
             identifier=identifier,
         )
+        request._login_rate_limit_result = rate_limit
+
         if not rate_limit.allowed:
             form = self.get_form()
             form.add_error(
@@ -45,6 +47,26 @@ class EmployeeLoginView(LoginView):
             return self.form_invalid(form)
 
         return super().post(request, *args, **kwargs)
+
+    def form_invalid(self, form):
+        rate_limit = getattr(self.request, "_login_rate_limit_result", None)
+        if (
+            rate_limit is not None
+            and rate_limit.allowed
+            and rate_limit.attempts_left is not None
+            and form.non_field_errors()
+        ):
+            if "__all__" in form.errors:
+                del form.errors["__all__"]
+            form.add_error(
+                None,
+                (
+                    "Не удалось выполнить вход. Проверьте email и пароль. "
+                    f"Осталось попыток: {rate_limit.attempts_left}."
+                ),
+            )
+
+        return super().form_invalid(form)
 
     def form_valid(self, form):
         self.security_service.reset_rate_limit(

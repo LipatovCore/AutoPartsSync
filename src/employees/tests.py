@@ -584,6 +584,19 @@ class EmployeeAuthRateLimitTests(TestCase):
         self.assertContains(response, "Превышен лимит попыток входа")
         self.assertContains(response, "120 сек")
 
+    def test_invalid_login_shows_remaining_attempts(self):
+        response = self.client.post(
+            reverse("login"),
+            {
+                "username": self.active_employee.email,
+                "password": "wrong-password",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Не удалось выполнить вход. Проверьте email и пароль.")
+        self.assertContains(response, "Осталось попыток: 1.")
+
     def test_successful_login_resets_login_rate_limit(self):
         payload = {
             "username": self.active_employee.email,
