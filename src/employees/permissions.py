@@ -18,6 +18,14 @@ DEFAULT_GROUP_PERMISSIONS = {
 }
 
 
+def has_employee_access_management(user) -> bool:
+    return user.is_authenticated and user.has_perm(MANAGE_EMPLOYEE_ACCESS)
+
+
+def has_employee_access_audit_view(user) -> bool:
+    return user.is_authenticated and user.has_perm(VIEW_EMPLOYEE_ACCESS_AUDIT)
+
+
 def ensure_default_employee_groups(**kwargs):
     content_type = ContentType.objects.get_for_model(Employee)
     permissions_by_codename = {

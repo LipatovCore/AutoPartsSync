@@ -37,6 +37,10 @@ from employees.services.password_setup_service import (
 from employees.services.session_service import EmployeeSessionService
 
 
+def assign_employee_group(employee: Employee, group_name: str) -> None:
+    employee.groups.add(Group.objects.get(name=group_name))
+
+
 class EmployeeManagerTests(TestCase):
     def test_create_user_uses_email_as_login_identifier(self):
         employee = Employee.objects.create_user(
@@ -587,6 +591,12 @@ class EmployeeManagementViewTests(TestCase):
             email="admin@example.com",
             password=self.password,
         )
+        self.employee_admin = Employee.objects.create_user(
+            email="employee-admin@example.com",
+            password=self.password,
+            status=Employee.Status.ACTIVE,
+        )
+        assign_employee_group(self.employee_admin, ADMIN_GROUP_NAME)
         self.regular_employee = Employee.objects.create_user(
             email="worker@example.com",
             password=self.password,
@@ -605,6 +615,36 @@ class EmployeeManagementViewTests(TestCase):
         response = self.client.get(reverse("employees:list"))
 
         self.assertEqual(response.status_code, 403)
+
+    def test_employee_management_is_available_for_user_with_manage_permission(self):
+        self.client.force_login(self.employee_admin)
+
+        response = self.client.get(reverse("employees:list"))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_user_with_manage_permission_can_create_employee(self):
+        self.client.force_login(self.employee_admin)
+
+        response = self.client.post(
+            reverse("employees:create"),
+            {"email": "managed@example.com"},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "managed@example.com")
+        self.assertTrue(Employee.objects.filter(email="managed@example.com").exists())
+
+    def test_navigation_shows_employee_link_only_for_user_with_manage_permission(self):
+        self.client.force_login(self.regular_employee)
+        regular_response = self.client.get(reverse("counterparties:client_list"))
+
+        self.client.force_login(self.employee_admin)
+        admin_response = self.client.get(reverse("counterparties:client_list"))
+
+        self.assertNotContains(regular_response, 'href="/employees/"', html=False)
+        self.assertContains(admin_response, 'href="/employees/"', html=False)
 
     def test_admin_can_create_employee_and_see_invitation_link(self):
         self.client.force_login(self.admin_employee)
@@ -888,6 +928,90 @@ class EmployeePasswordSetupViewTests(TestCase):
         self.assertContains(response, 'name="new_password1"', html=False)
         self.assertEqual(self.employee.status, Employee.Status.CREATED)
         self.assertIsNone(self.invitation.used_at)
+
+
+class EmployeeAccessAuditAdminTests(TestCase):
+    def setUp(self):
+        self.password = "safe-password-123"
+        self.audit_viewer = Employee.objects.create_user(
+            email="audit@example.com",
+            password=self.password,
+            status=Employee.Status.ACTIVE,
+            is_staff=True,
+        )
+        assign_employee_group(self.audit_viewer, ADMIN_GROUP_NAME)
+        self.staff_without_permission = Employee.objects.create_user(
+            email="staff@example.com",
+            password=self.password,
+            status=Employee.Status.ACTIVE,
+            is_staff=True,
+        )
+        self.target_employee = Employee.objects.create_user(
+            email="worker@example.com",
+            password=self.password,
+            status=Employee.Status.ACTIVE,
+        )
+        EmployeeAccessAuditEvent.objects.create(
+            event_type=EmployeeAccessAuditEvent.EventType.EMPLOYEE_CREATED,
+            employee=self.target_employee,
+            actor=self.audit_viewer,
+        )
+
+    def test_staff_with_audit_permission_can_open_audit_changelist(self):
+        self.client.force_login(self.audit_viewer)
+
+        response = self.client.get(
+            reverse("admin:employees_employeeaccessauditevent_changelist")
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_staff_without_audit_permission_cannot_open_audit_changelist(self):
+        self.client.force_login(self.staff_without_permission)
+
+        response = self.client.get(
+            reverse("admin:employees_employeeaccessauditevent_changelist")
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+
+class EmployeeModelAdminRegistrationTests(TestCase):
+    def setUp(self):
+        self.password = "safe-password-123"
+        self.superuser = Employee.objects.create_superuser(
+            email="admin@example.com",
+            password=self.password,
+        )
+        self.employee = Employee.objects.create_user(
+            email="worker@example.com",
+            password=self.password,
+            status=Employee.Status.ACTIVE,
+        )
+        self.invitation = EmployeeInvitation.objects.create(
+            employee=self.employee,
+            issued_by=self.superuser,
+            token_hash="admin-visible-token-hash",
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+
+    def test_superuser_can_open_employee_changelist(self):
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(reverse("admin:employees_employee_changelist"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.employee.email)
+
+    def test_superuser_can_open_employee_invitation_changelist(self):
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(
+            reverse("admin:employees_employeeinvitation_changelist")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.employee.email)
 
 @override_settings(
     EMPLOYEE_AUTH_RATE_LIMITS={

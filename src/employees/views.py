@@ -10,6 +10,7 @@ from employees.forms import (
     EmployeeInvitationIssueForm,
     EmployeePasswordSetupForm,
 )
+from employees.permissions import has_employee_access_management
 from employees.repositories.invitation_repository import EmployeeInvitationRepository
 from employees.services.access_service import (
     EmployeeAccessService,
@@ -86,7 +87,7 @@ def _ensure_system_admin(request):
     if not request.user.is_authenticated:
         return redirect(f"{reverse('login')}?next={request.path}")
 
-    if not request.user.is_superuser:
+    if not has_employee_access_management(request.user):
         raise PermissionDenied
 
     return None

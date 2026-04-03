@@ -145,6 +145,7 @@
 - Для первой версии зафиксированы две группы: `admin` и `user`.
 - Группа `admin` получает права `employees.manage_employee_access` и `employees.view_employee_access_audit`.
 - Группа `user` не получает административных permissions employee-auth и остается базовой рабочей ролью без доступа к управлению сотрудниками.
+- Интерфейс employee-management доступен только сотрудникам с permission `employees.manage_employee_access`.
 - Все последующие этапы employee-auth должны опираться на это решение и не возвращаться к варианту со стандартным `auth.User` как целевой модели.
 
 ### 7.1. Общие правила доступа
@@ -153,6 +154,7 @@
 - Публичная регистрация пользователей запрещена.
 - Вход сотрудника выполняется только по email и паролю.
 - Доступ к Django admin остается только у администраторов системы.
+- Журнал аудита employee-auth в Django admin доступен только staff-пользователям с permission `employees.view_employee_access_audit`.
 
 ### 7.2. Создание сотрудника
 
