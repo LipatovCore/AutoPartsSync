@@ -72,11 +72,18 @@
                             {% endif %}
                         {% endwith %}
 
-                        {% if employee.status == "created" %}
+                        {% if employee.status != "deactivated" %}
                             <div class="entity-card__footer">
-                                <form method="post" action="{% url 'employees:reissue-invitation' employee.pk %}">
+                                {% if employee.status == "created" %}
+                                    <form method="post" action="{% url 'employees:reissue-invitation' employee.pk %}">
+                                        {% csrf_token %}
+                                        <button type="submit">Перевыпустить ссылку</button>
+                                    </form>
+                                {% endif %}
+
+                                <form method="post" action="{% url 'employees:deactivate' employee.pk %}">
                                     {% csrf_token %}
-                                    <button type="submit">Перевыпустить ссылку</button>
+                                    <button type="submit">Деактивировать</button>
                                 </form>
                             </div>
                         {% endif %}

@@ -11,11 +11,15 @@ from employees.forms import (
     EmployeePasswordSetupForm,
 )
 from employees.repositories.invitation_repository import EmployeeInvitationRepository
+from employees.services.access_service import (
+    EmployeeAccessService,
+    EmployeeAccessServiceError,
+)
+from employees.services.audit_service import EmployeeAccessAuditService
 from employees.services.invitation_service import (
     EmployeeInvitationService,
     EmployeeInvitationServiceError,
 )
-from employees.services.audit_service import EmployeeAccessAuditService
 from employees.services.password_setup_service import (
     EmployeePasswordSetupService,
     EmployeePasswordSetupServiceError,
@@ -204,6 +208,28 @@ def employee_reissue_invitation(request, employee_id: int):
     )
     request.session["employee_invitation_email"] = result.employee.email
     messages.success(request, "Приглашение перевыпущено.")
+    return redirect(reverse("employees:list"))
+
+
+@require_POST
+def employee_deactivate(request, employee_id: int):
+    access_response = _ensure_system_admin(request)
+    if access_response is not None:
+        return access_response
+
+    service = EmployeeAccessService()
+
+    try:
+        service.deactivate_employee(
+            employee_id=employee_id,
+            actor=request.user,
+            ip_address=_get_client_ip(request),
+        )
+    except EmployeeAccessServiceError as error:
+        messages.error(request, str(error))
+        return redirect(reverse("employees:list"))
+
+    messages.success(request, "Сотрудник деактивирован.")
     return redirect(reverse("employees:list"))
 
 

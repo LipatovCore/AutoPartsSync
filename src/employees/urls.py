@@ -2,6 +2,7 @@ from django.urls import path
 
 from employees.views import (
     employee_create,
+    employee_deactivate,
     employee_list,
     employee_reissue_invitation,
     employee_set_password,
@@ -22,4 +23,5 @@ urlpatterns = [
         employee_reissue_invitation,
         name="reissue-invitation",
     ),
+    path("<int:employee_id>/deactivate/", employee_deactivate, name="deactivate"),
 ]

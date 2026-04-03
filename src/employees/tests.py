@@ -13,6 +13,10 @@ from django.urls import reverse
 from django.utils import timezone
 
 from employees.models import Employee, EmployeeAccessAuditEvent, EmployeeInvitation
+from employees.services.access_service import (
+    EmployeeAccessService,
+    EmployeeAccessServiceError,
+)
 from employees.services.invitation_service import (
     EmployeeInvitationService,
     EmployeeInvitationServiceError,
@@ -280,6 +284,69 @@ class EmployeePasswordSetupServiceTests(TestCase):
             )
 
 
+class EmployeeAccessServiceTests(TestCase):
+    def setUp(self):
+        self.service = EmployeeAccessService()
+        self.admin_employee = Employee.objects.create_superuser(
+            email="admin@example.com",
+            password="safe-password-123",
+        )
+        self.target_employee = Employee.objects.create_user(
+            email="active@example.com",
+            password="safe-password-123",
+            status=Employee.Status.ACTIVE,
+        )
+
+    def test_deactivate_employee_changes_status_terminates_sessions_and_records_audit(self):
+        session = SessionStore()
+        session[SESSION_KEY] = str(self.target_employee.pk)
+        session.create()
+
+        self.service.deactivate_employee(
+            employee_id=self.target_employee.pk,
+            actor=self.admin_employee,
+            ip_address="127.0.0.1",
+        )
+
+        self.target_employee.refresh_from_db()
+
+        self.assertEqual(self.target_employee.status, Employee.Status.DEACTIVATED)
+        self.assertFalse(
+            Session.objects.filter(session_key=session.session_key).exists()
+        )
+        self.assertTrue(
+            EmployeeAccessAuditEvent.objects.filter(
+                event_type=EmployeeAccessAuditEvent.EventType.EMPLOYEE_DEACTIVATED,
+                employee=self.target_employee,
+                actor=self.admin_employee,
+                ip_address="127.0.0.1",
+            ).exists()
+        )
+
+    def test_deactivate_employee_rejects_self_deactivation(self):
+        with self.assertRaisesMessage(
+            EmployeeAccessServiceError,
+            "Нельзя деактивировать собственную учетную запись.",
+        ):
+            self.service.deactivate_employee(
+                employee_id=self.admin_employee.pk,
+                actor=self.admin_employee,
+            )
+
+    def test_deactivate_employee_rejects_already_deactivated_employee(self):
+        self.target_employee.status = Employee.Status.DEACTIVATED
+        self.target_employee.save(update_fields=["status", "updated_at"])
+
+        with self.assertRaisesMessage(
+            EmployeeAccessServiceError,
+            "Сотрудник уже деактивирован.",
+        ):
+            self.service.deactivate_employee(
+                employee_id=self.target_employee.pk,
+                actor=self.admin_employee,
+            )
+
+
 class EmployeeSessionServiceTests(TestCase):
     def setUp(self):
         self.service = EmployeeSessionService()
@@ -481,6 +548,46 @@ class EmployeeManagementViewTests(TestCase):
             EmployeeInvitation.objects.filter(employee=self.regular_employee).count(),
             0,
         )
+
+    def test_admin_can_deactivate_employee_and_terminate_sessions(self):
+        session = SessionStore()
+        session[SESSION_KEY] = str(self.regular_employee.pk)
+        session.create()
+        self.client.force_login(self.admin_employee)
+
+        response = self.client.post(
+            reverse("employees:deactivate", args=[self.regular_employee.pk]),
+            follow=True,
+        )
+
+        self.regular_employee.refresh_from_db()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.regular_employee.status, Employee.Status.DEACTIVATED)
+        self.assertFalse(
+            Session.objects.filter(session_key=session.session_key).exists()
+        )
+        self.assertTrue(
+            EmployeeAccessAuditEvent.objects.filter(
+                event_type=EmployeeAccessAuditEvent.EventType.EMPLOYEE_DEACTIVATED,
+                employee=self.regular_employee,
+                actor=self.admin_employee,
+            ).exists()
+        )
+
+    def test_admin_cannot_deactivate_self(self):
+        self.client.force_login(self.admin_employee)
+
+        response = self.client.post(
+            reverse("employees:deactivate", args=[self.admin_employee.pk]),
+            follow=True,
+        )
+
+        self.admin_employee.refresh_from_db()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.admin_employee.status, Employee.Status.ACTIVE)
+        self.assertContains(response, "Нельзя деактивировать собственную учетную запись.")
 
 
 class EmployeePasswordSetupViewTests(TestCase):

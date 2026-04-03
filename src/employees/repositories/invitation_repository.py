@@ -68,6 +68,11 @@ class EmployeeInvitationRepository:
         employee.save(update_fields=["status", "email_verified", "updated_at"])
         return employee
 
+    def deactivate_employee(self, *, employee: Employee) -> Employee:
+        employee.status = Employee.Status.DEACTIVATED
+        employee.save(update_fields=["status", "updated_at"])
+        return employee
+
     def list_employees_with_invitations(self) -> QuerySet[Employee]:
         active_invitations = EmployeeInvitation.objects.filter(
             used_at__isnull=True,
