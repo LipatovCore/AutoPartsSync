@@ -25,7 +25,7 @@ AutoPartsSync - внутреннее Django-приложение для мага
 
 1. Создайте и активируйте виртуальное окружение.
 2. Установите зависимости.
-3. Заполните `.env` в корне проекта.
+3. Скопируйте `.env.example` в `.env` и заполните значения.
 4. Выполните миграции.
 5. При необходимости создайте суперпользователя.
 6. Запустите сервер разработки.
@@ -44,6 +44,7 @@ cd src
 
 Минимальные переменные окружения:
 
+- `DJANGO_ENV` (`local` для разработки, `production` для production)
 - `DJANGO_SECRET_KEY`
 - `DJANGO_DEBUG`
 - `DJANGO_ALLOWED_HOSTS`
@@ -51,6 +52,12 @@ cd src
 - `ABCP_USER`
 - `ABCP_PASS`
 - `MS_TOKEN`
+
+Базовые правила окружения:
+
+- вне `DJANGO_ENV=local` приложение принудительно отключает `DEBUG`;
+- вне `DJANGO_ENV=local` `DJANGO_SECRET_KEY` и `DJANGO_ALLOWED_HOSTS` обязательны;
+- в `DJANGO_ENV=production` включаются `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` и доверие к `X-Forwarded-Proto`.
 
 ## Команды для разработки
 

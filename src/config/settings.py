@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from datetime import timedelta
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 
@@ -25,22 +27,78 @@ load_dotenv(BASE_DIR.parent / ".env")
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
+LOCAL_ENVIRONMENT = "local"
+PRODUCTION_ENVIRONMENT = "production"
+DJANGO_ENV = os.getenv("DJANGO_ENV", LOCAL_ENVIRONMENT).strip().lower() or LOCAL_ENVIRONMENT
+
+
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_debug_setting(environment):
+    if environment != LOCAL_ENVIRONMENT:
+        return False
+    return env_bool("DJANGO_DEBUG", default=True)
+
+
+def get_allowed_hosts(environment, debug_enabled):
+    allowed_hosts = [
+        host.strip()
+        for host in os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
+        if host.strip()
+    ]
+
+    if allowed_hosts:
+        return allowed_hosts
+
+    if environment == LOCAL_ENVIRONMENT and debug_enabled:
+        return ["127.0.0.1", "localhost"]
+
+    raise ImproperlyConfigured(
+        "DJANGO_ALLOWED_HOSTS must be configured outside local development."
+    )
+
+
+def get_secret_key(environment):
+    secret_key = os.getenv("DJANGO_SECRET_KEY")
+    if secret_key:
+        return secret_key
+
+    if environment == LOCAL_ENVIRONMENT:
+        return "unsafe-local-development-key"
+
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY must be configured outside local development."
+    )
+
+
+def get_security_settings(environment):
+    if environment != PRODUCTION_ENVIRONMENT:
+        return {
+            "SECURE_SSL_REDIRECT": False,
+            "SESSION_COOKIE_SECURE": False,
+            "CSRF_COOKIE_SECURE": False,
+            "SECURE_PROXY_SSL_HEADER": None,
+        }
+
+    return {
+        "SECURE_SSL_REDIRECT": True,
+        "SESSION_COOKIE_SECURE": True,
+        "CSRF_COOKIE_SECURE": True,
+        "SECURE_PROXY_SSL_HEADER": ("HTTP_X_FORWARDED_PROTO", "https"),
+    }
+
+
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+SECRET_KEY = get_secret_key(DJANGO_ENV)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DJANGO_DEBUG") == "True"
-
-allowed_hosts = [
-    host.strip()
-    for host in os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
-    if host.strip()
-]
-
-if not allowed_hosts and DEBUG:
-    allowed_hosts = ["127.0.0.1", "localhost"]
-
-ALLOWED_HOSTS = allowed_hosts
+# SECURITY WARNING: don't run with debug turned on outside local development!
+DEBUG = get_debug_setting(DJANGO_ENV)
+ALLOWED_HOSTS = get_allowed_hosts(DJANGO_ENV, DEBUG)
 
 
 # Application definition
@@ -139,6 +197,12 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+SECURITY_SETTINGS = get_security_settings(DJANGO_ENV)
+SECURE_SSL_REDIRECT = SECURITY_SETTINGS["SECURE_SSL_REDIRECT"]
+SESSION_COOKIE_SECURE = SECURITY_SETTINGS["SESSION_COOKIE_SECURE"]
+CSRF_COOKIE_SECURE = SECURITY_SETTINGS["CSRF_COOKIE_SECURE"]
+SECURE_PROXY_SSL_HEADER = SECURITY_SETTINGS["SECURE_PROXY_SSL_HEADER"]
 
 LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/analogs/"

@@ -27,6 +27,8 @@
 
 - `config.settings`
   Поднимает окружение через `.env`, подключает приложения `analogs`, `counterparties` и `employees`, использует SQLite как основную БД, настраивает шаблоны, статику, кастомную user-модель, backend аутентификации сотрудников, редиректы логина и TTL invitation token на 24 часа.
+  Также определяет режим окружения `DJANGO_ENV`: в `local` разрешает локальный fallback для `SECRET_KEY` и `ALLOWED_HOSTS`, а вне локальной разработки принудительно отключает `DEBUG` и требует явные значения `DJANGO_SECRET_KEY` и `DJANGO_ALLOWED_HOSTS`.
+  Для `production` включает обязательный HTTPS baseline: `SECURE_SSL_REDIRECT`, secure-флаги cookie и `SECURE_PROXY_SSL_HEADER`.
 
 - `config.urls`
   Разводит входящие HTTP-маршруты по основным зонам приложения:
@@ -319,7 +321,7 @@
 ### Влияние на существующий проект
 
 - `config.settings`
-  Потребует настройки кастомной модели пользователя, backend аутентификации по email, security-параметров cookie и конфигурации TTL токена.
+  Требует настройки кастомной модели пользователя, backend аутентификации по email, security-параметров cookie, production baseline для HTTPS/cookie и конфигурации TTL токена.
 
 - `config.urls`
   Потребует подключения маршрутов employee-auth рядом с текущими `accounts/`.
