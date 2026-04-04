@@ -30,6 +30,10 @@ load_dotenv(BASE_DIR.parent / ".env")
 LOCAL_ENVIRONMENT = "local"
 PRODUCTION_ENVIRONMENT = "production"
 DJANGO_ENV = os.getenv("DJANGO_ENV", LOCAL_ENVIRONMENT).strip().lower() or LOCAL_ENVIRONMENT
+INSECURE_SECRET_KEY_VALUES = {
+    "unsafe-local-development-key",
+    "replace-with-a-long-random-secret",
+}
 
 
 def env_bool(name, default=False):
@@ -64,15 +68,18 @@ def get_allowed_hosts(environment, debug_enabled):
 
 
 def get_secret_key(environment):
-    secret_key = os.getenv("DJANGO_SECRET_KEY")
-    if secret_key:
+    secret_key = (os.getenv("DJANGO_SECRET_KEY") or "").strip()
+    if secret_key and (
+        environment == LOCAL_ENVIRONMENT
+        or secret_key not in INSECURE_SECRET_KEY_VALUES
+    ):
         return secret_key
 
     if environment == LOCAL_ENVIRONMENT:
         return "unsafe-local-development-key"
 
     raise ImproperlyConfigured(
-        "DJANGO_SECRET_KEY must be configured outside local development."
+        "DJANGO_SECRET_KEY must be configured outside local development and must not use placeholder or fallback values."
     )
 
 

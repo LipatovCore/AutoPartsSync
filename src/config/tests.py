@@ -46,7 +46,31 @@ class SettingsHelpersTests(SimpleTestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesMessage(
                 ImproperlyConfigured,
-                "DJANGO_SECRET_KEY must be configured outside local development.",
+                "DJANGO_SECRET_KEY must be configured outside local development and must not use placeholder or fallback values.",
+            ):
+                settings.get_secret_key(settings.PRODUCTION_ENVIRONMENT)
+
+    def test_non_local_environment_rejects_placeholder_secret_key(self):
+        with patch.dict(
+            os.environ,
+            {"DJANGO_SECRET_KEY": "replace-with-a-long-random-secret"},
+            clear=True,
+        ):
+            with self.assertRaisesMessage(
+                ImproperlyConfigured,
+                "DJANGO_SECRET_KEY must be configured outside local development and must not use placeholder or fallback values.",
+            ):
+                settings.get_secret_key("staging")
+
+    def test_non_local_environment_rejects_local_fallback_secret_key(self):
+        with patch.dict(
+            os.environ,
+            {"DJANGO_SECRET_KEY": "unsafe-local-development-key"},
+            clear=True,
+        ):
+            with self.assertRaisesMessage(
+                ImproperlyConfigured,
+                "DJANGO_SECRET_KEY must be configured outside local development and must not use placeholder or fallback values.",
             ):
                 settings.get_secret_key(settings.PRODUCTION_ENVIRONMENT)
 

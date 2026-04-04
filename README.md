@@ -53,6 +53,12 @@ cd src
 - `ABCP_PASS`
 - `MS_TOKEN`
 
+Шаблон окружения:
+
+- `.env.example` предназначен только как локальный шаблон;
+- после копирования в `.env` нужно заменить все placeholder-значения секретов (`DJANGO_SECRET_KEY`, `ABCP_PASS`, `MS_TOKEN`);
+- вне `DJANGO_ENV=local` приложение не принимает пустой `DJANGO_SECRET_KEY`, локальный fallback `unsafe-local-development-key` и шаблонные значения из `.env.example`.
+
 Базовые правила окружения:
 
 - вне `DJANGO_ENV=local` приложение принудительно отключает `DEBUG`;
