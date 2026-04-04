@@ -34,6 +34,7 @@ from employees.services.password_setup_service import (
     EmployeePasswordSetupService,
     EmployeePasswordSetupServiceError,
 )
+from employees.services.security_service import EmployeeSecurityService
 from employees.services.session_service import EmployeeSessionService
 
 
@@ -511,6 +512,109 @@ class EmployeeSessionServiceTests(TestCase):
 
         self.assertEqual(deleted_count, 0)
         self.assertTrue(Session.objects.filter(session_key=other_session_key).exists())
+
+
+@override_settings(
+    EMPLOYEE_AUTH_RATE_LIMITS={
+        "login": {"attempts": 2, "window_seconds": 60, "block_seconds": 120},
+        "password_setup": {"attempts": 2, "window_seconds": 60, "block_seconds": 120},
+        "invitation_reissue": {
+            "attempts": 2,
+            "window_seconds": 60,
+            "block_seconds": 120,
+        },
+    }
+)
+class EmployeeSecurityServiceTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.service = EmployeeSecurityService()
+
+    def test_rate_limit_blocks_after_attempt_limit_is_exceeded(self):
+        first_attempt = self.service.check_rate_limit(
+            scope="login",
+            ip_address="127.0.0.1",
+            identifier="worker@example.com",
+        )
+        second_attempt = self.service.check_rate_limit(
+            scope="login",
+            ip_address="127.0.0.1",
+            identifier="worker@example.com",
+        )
+        blocked_attempt = self.service.check_rate_limit(
+            scope="login",
+            ip_address="127.0.0.1",
+            identifier="worker@example.com",
+        )
+
+        self.assertTrue(first_attempt.allowed)
+        self.assertEqual(first_attempt.attempts_left, 1)
+        self.assertTrue(second_attempt.allowed)
+        self.assertEqual(second_attempt.attempts_left, 0)
+        self.assertFalse(blocked_attempt.allowed)
+        self.assertEqual(blocked_attempt.attempts_left, 0)
+        self.assertEqual(blocked_attempt.attempts_limit, 2)
+        self.assertEqual(blocked_attempt.retry_after_seconds, 120)
+
+    def test_rate_limit_isolated_by_normalized_identifier(self):
+        self.service.check_rate_limit(
+            scope="login",
+            ip_address="127.0.0.1",
+            identifier="Worker@Example.com",
+        )
+        second_attempt = self.service.check_rate_limit(
+            scope="login",
+            ip_address="127.0.0.1",
+            identifier="worker@example.com",
+        )
+        different_identifier_attempt = self.service.check_rate_limit(
+            scope="login",
+            ip_address="127.0.0.1",
+            identifier="other@example.com",
+        )
+
+        self.assertTrue(second_attempt.allowed)
+        self.assertEqual(second_attempt.attempts_left, 0)
+        self.assertTrue(different_identifier_attempt.allowed)
+        self.assertEqual(different_identifier_attempt.attempts_left, 1)
+
+    def test_reset_rate_limit_clears_counter_and_block(self):
+        scope = "login"
+        ip_address = "127.0.0.1"
+        identifier = "worker@example.com"
+
+        self.service.check_rate_limit(
+            scope=scope,
+            ip_address=ip_address,
+            identifier=identifier,
+        )
+        self.service.check_rate_limit(
+            scope=scope,
+            ip_address=ip_address,
+            identifier=identifier,
+        )
+        blocked_attempt = self.service.check_rate_limit(
+            scope=scope,
+            ip_address=ip_address,
+            identifier=identifier,
+        )
+
+        self.assertFalse(blocked_attempt.allowed)
+
+        self.service.reset_rate_limit(
+            scope=scope,
+            ip_address=ip_address,
+            identifier=identifier,
+        )
+
+        first_attempt_after_reset = self.service.check_rate_limit(
+            scope=scope,
+            ip_address=ip_address,
+            identifier=identifier,
+        )
+
+        self.assertTrue(first_attempt_after_reset.allowed)
+        self.assertEqual(first_attempt_after_reset.attempts_left, 1)
 
 
 class EmployeeLoginTests(TestCase):
