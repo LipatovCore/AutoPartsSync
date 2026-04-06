@@ -1,335 +1,368 @@
 # Архитектура AutoPartsSync
 
-## Как устроен проект
+Документ фиксирует фактическое устройство проекта по состоянию текущего кода. Здесь нет целевой архитектуры "на будущее", если она не подтверждена файлами в `src/`.
 
-- `src/config`
-  Коруневой Django-модуль: настройки, общие URL-маршруты, точка входа WSGI/ASGI.
+## 1. Общая схема
 
-- `src/analogs`
-  Модуль поиска аналогов и остатков. В текущей реализации вся прикладная логика находится в [`views.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/analogs/views.py): отдельного service-слоя и моделей здесь нет.
+```text
+HTTP request
+  -> config.urls
+  -> app urls
+  -> view
+     -> forms / services / repositories / ORM / external HTTP API
+  -> template
+  -> HTML response
+```
 
-- `src/counterparties`
-  Модуль контрагентов и автомобилей. Содержит модели `Client` и `Car`, формы, CRUD-view-функции и маршруты.
+Реально используются три разных стиля внутри одного монолита:
 
-- `src/employees`
-  Модуль сотрудников и employee-auth. На текущем этапе содержит кастомную user-модель `Employee`, модель `EmployeeInvitation`, менеджер пользователя для email-only identity, формы логина, выдачи приглашения и установки пароля, backend аутентификации, login view, employee-management view, публичный view установки пароля по токену, а также service/repository для выпуска приглашений, активации и деактивации сотрудника.
+1. `employees`
+   Есть слои `views -> services -> repository -> models`.
+2. `counterparties`
+   Используется `views -> forms + ORM -> templates`.
+3. `analogs`
+   Почти вся логика находится прямо в `views.py`, включая запросы во внешние API.
 
-- `src/templates`
-  Общие и прикладные HTML-шаблоны. Интерфейс серверно-рендеринговый: Django view собирает данные и сразу отдает готовую страницу.
+## 2. Модули и их роли
 
-- `src/staticfiles`
-  Собранная статика, в основном стандартные файлы Django admin. Это артефакт развертывания, а не источник бизнес-логики.
+### `src/config`
 
-- `docker-compose.yaml`, `Dockerfile`, `docker/nginx/default.conf`
-  Контур запуска: Django/Gunicorn в контейнере `web`, Nginx перед ним, отдельный volume под статику.
+Назначение:
 
-## Основные модули и их ответственность
+- загрузка окружения;
+- настройки Django;
+- root URL;
+- WSGI/ASGI entrypoints.
 
-- `config.settings`
-  Поднимает окружение через `.env`, подключает приложения `analogs`, `counterparties` и `employees`, использует SQLite как основную БД, настраивает шаблоны, статику, кастомную user-модель, backend аутентификации сотрудников, редиректы логина и TTL invitation token на 24 часа.
-  Также определяет режим окружения `DJANGO_ENV`: в `local` разрешает локальный fallback для `SECRET_KEY` и `ALLOWED_HOSTS`, а вне локальной разработки принудительно отключает `DEBUG`, требует явные значения `DJANGO_SECRET_KEY` и `DJANGO_ALLOWED_HOSTS` и отклоняет известные placeholder/fallback-значения секрета из локального шаблона окружения.
-  Для `production` включает обязательный HTTPS baseline: `SECURE_SSL_REDIRECT`, secure-флаги cookie и `SECURE_PROXY_SSL_HEADER`.
-  Seamless-ротация `DJANGO_SECRET_KEY` сейчас не поддерживается: `SECRET_KEY_FALLBACKS` не настроен, поэтому смена ключа требует синхронного обновления секрета на всех инстансах и перезапуска приложения, после чего существующие сессии считаются недействительными.
-  Интеграционные секреты `ABCP_PASS` и `MS_TOKEN` также считаются внешними env-секретами: их ротация выполняется вне кода приложения через выпуск нового значения у провайдера, обновление окружения деплоя, перезапуск приложения и отзыв старого значения после переключения.
+Ключевые файлы:
 
-- `config.urls`
-  Разводит входящие HTTP-маршруты по основным зонам приложения:
-  `admin/`, `accounts/`, `employees/`, `analogs/`, `counterparties/`.
+- [`src/config/settings.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/config/settings.py)
+- [`src/config/urls.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/config/urls.py)
+- [`src/config/wsgi.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/config/wsgi.py)
+- [`src/config/asgi.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/config/asgi.py)
 
-- `analogs.views.search`
-  Обрабатывает GET-поиск по артикулу, вызывает внешние API, собирает итоговый словарь результатов и отдает `search.html`.
+Что важно:
 
-- `analogs.views.search_article`, `ms_assort`, `search_ms`
-  Вспомогательные функции интеграции.
-  `search_article` ходит в ABCP за аналогами.
-  `ms_assort` и `search_ms` обогащают найденные позиции данными из МойСклад.
+- `.env` читается из корня репозитория через `python-dotenv`;
+- база данных по умолчанию: SQLite;
+- модель пользователя заменена на `employees.Employee`;
+- все приложения подключаются здесь.
 
-- `counterparties.models`
-  Хранит основные доменные сущности:
-  `Client` -> карточка клиента.
-  `Car` -> автомобиль, привязанный к клиенту через `ForeignKey`.
+### `src/employees`
 
-- `counterparties.forms`
-  `ModelForm` для ввода и редактирования клиентов и автомобилей.
+Назначение:
 
-- `counterparties.views`
-  Реализует рабочее место контрагентов:
-  список и поиск клиентов,
-  выбор активного клиента,
-  создание/редактирование/удаление клиента,
-  создание/редактирование/удаление автомобиля.
+- кастомная user-модель;
+- логин сотрудников;
+- приглашения на установку пароля;
+- деактивация и сброс доступа;
+- аудит событий доступа;
+- bootstrap групп и permission.
 
-- `counterparties.admin`
-  Подключает модели к Django admin. Это отдельный административный интерфейс поверх тех же данных SQLite.
+Структура:
 
-- `employees.models`
-  Хранит кастомную модель сотрудника `Employee` и модель приглашения `EmployeeInvitation`.
-  `Employee` использует email как `USERNAME_FIELD`, хранит доменный статус доступа и служебные timestamps.
-  `EmployeeInvitation` хранит только хеш токена, время истечения, время использования, время отзыва и автора выдачи.
+- [`src/employees/models.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/models.py)
+- [`src/employees/views.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/views.py)
+- [`src/employees/forms.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/forms.py)
+- [`src/employees/auth_backends.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/auth_backends.py)
+- [`src/employees/permissions.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/permissions.py)
+- [`src/employees/repositories/invitation_repository.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/repositories/invitation_repository.py)
+- [`src/employees/services/invitation_service.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/services/invitation_service.py)
+- [`src/employees/services/password_setup_service.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/services/password_setup_service.py)
+- [`src/employees/services/access_service.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/services/access_service.py)
+- [`src/employees/services/audit_service.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/services/audit_service.py)
+- [`src/employees/services/security_service.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/services/security_service.py)
+- [`src/employees/services/session_service.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/services/session_service.py)
 
-- `employees.managers`
-  Содержит `EmployeeManager` для создания обычных пользователей и суперпользователей через email.
+Это самый структурированный модуль проекта.
 
-- `employees.forms`
-  Содержит `EmployeeAuthenticationForm` для login по email, `EmployeeInvitationIssueForm` для административного выпуска приглашения и `EmployeePasswordSetupForm` для установки пароля по invite-ссылке.
+### `src/counterparties`
 
-- `employees.auth_backends`
-  Содержит `EmployeeAuthenticationBackend`, который разрешает вход только активным с точки зрения доменного статуса сотрудникам и использует email как идентификатор.
+Назначение:
 
-- `employees.permissions`
-  Содержит канонические имена групп и permissions employee-auth первой версии, а также синхронизацию групп `admin` и `user` через `post_migrate`.
+- клиенты;
+- автомобили клиентов;
+- поиск и CRUD в одном workspace.
 
-- `employees.views`
-  Содержит `EmployeeLoginView`, view employee-management для списка сотрудников, создания сотрудника, перевыпуска приглашения, reset доступа и деактивации сотрудника, который открыт только пользователям с permission `employees.manage_employee_access`, а также публичный view установки пароля по invite-токену.
+Структура:
 
-- `employees.services.invitation_service`
-  Реализует бизнес-сценарий создания сотрудника со статусом `created`, генерации одноразового токена, отзыва предыдущего приглашения и выпуска нового приглашения.
+- [`src/counterparties/models.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/counterparties/models.py)
+- [`src/counterparties/forms.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/counterparties/forms.py)
+- [`src/counterparties/views.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/counterparties/views.py)
+- [`src/counterparties/urls.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/counterparties/urls.py)
+- [`src/counterparties/admin.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/counterparties/admin.py)
 
-- `employees.services.password_setup_service`
-  Реализует бизнес-сценарий активации сотрудника по invite-токену: повторно валидирует токен, устанавливает пароль, переводит сотрудника в `active`, помечает приглашение использованным и завершает старые сессии сотрудника.
+Фактический паттерн:
 
-- `employees.services.access_service`
-  Реализует административные сценарии деактивации и сброса доступа сотрудника.
-  При деактивации сервис переводит учетную запись в `deactivated`, завершает активные сессии, пишет событие аудита и запрещает системному администратору деактивировать собственную учетную запись.
-  При reset доступа сервис делает текущий пароль непригодным, переводит сотрудника в `created`, завершает активные сессии, при наличии отзывает незавершенное приглашение, выпускает новое и пишет события аудита `access_reset`, `invitation_revoked` и `invitation_issued`.
+- формы валидируют пользовательский ввод;
+- view-функции сами строят queryset, сами выбирают активного клиента, сами управляют редиректами и `messages`;
+- отдельного service/repository слоя нет.
 
-- `employees.repositories.invitation_repository`
-  Инкапсулирует ORM-операции для поиска сотрудника, отзыва активного приглашения, создания приглашения и выборки employee-management списка.
+### `src/analogs`
 
-## Связи между модулями
+Назначение:
 
-- Пользователь входит через встроенный `django.contrib.auth`, но целевая модель пользователя уже заменена на `employees.Employee`.
-  Оба прикладных раздела защищены `@login_required`.
+- поиск брендов и аналогов в ABCP;
+- запрос ассортимента и остатков из МойСклад;
+- вывод итоговой таблицы.
 
-- `config.urls` связывает HTTP-вход с приложениями.
-  Дальше каждый app сам управляет своими маршрутами через `urls.py`.
+Структура:
 
-- `counterparties.views` напрямую работает с ORM-моделями `Client` и `Car`.
-  Промежуточного слоя репозиториев или сервисов сейчас нет.
+- [`src/analogs/views.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/analogs/views.py)
+- [`src/analogs/urls.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/analogs/urls.py)
+- [`src/analogs/models.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/analogs/models.py)
 
-- `counterparties.views` использует `ClientForm` и `CarForm` для валидации POST-данных.
+Фактически:
 
-- `analogs.views` не использует локальные модели.
-  Данные живут только в памяти запроса и собираются из внешних API.
+- моделей нет;
+- почти весь модуль состоит из одного набора функций в `views.py`;
+- интеграция и orchestration не отделены от HTTP-слоя.
 
-- `employees.EmployeeInvitation` связан с `employees.Employee` двумя связями:
-  `employee` описывает получателя приглашения,
-  `issued_by` хранит администратора, который выдал ссылку.
+### `src/templates`
 
-- Шаблоны связаны с view-функциями напрямую:
-  `search.html` <- `analogs.views.search`
-  `counterparties/client_list.html` <- `counterparties.views.client_list`
-  `registration/login.html` <- `employees.views.EmployeeLoginView`
-  `employees/employee_management.html` <- `employees.views.employee_list`
-  `employees/set_password.html` <- `employees.views.employee_set_password`
+Назначение:
 
-## Потоки данных
+- server-side rendered UI.
 
-- Поиск аналогов
-  Пользователь открывает `/analogs/` и отправляет GET с параметром `search`.
-  `analogs.views.search` сначала запрашивает у ABCP список брендов по артикулу.
-  Если найден ровно один бренд, приложение делает второй запрос в ABCP за аналогами.
-  Потом найденные артикулы отправляются в МойСклад: сначала за `assortment id`, затем за остатками.
-  Итоговый словарь `article -> {brand, id?, stock}` передается в шаблон и рендерится таблицей.
+Что важно:
 
-- Работа с контрагентами
-  Пользователь открывает `/counterparties/clients/`.
-  `client_list` читает query-параметры `q`, `client`, `car_form`, строит ORM-запрос с `annotate`, `prefetch_related`, `Q`-фильтрами и выбирает активного клиента.
-  Затем страница получает сразу три набора данных: список клиентов, карточку выбранного клиента и список его автомобилей.
+- общий layout в [`src/templates/base.html`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/templates/base.html);
+- страницы логина и установки пароля имеют собственные standalone шаблоны;
+- `counterparties/client_list.html` содержит не только HTML, но и большой объём inline CSS/JS.
 
-- Создание и редактирование сущностей
-  Формы отправляют POST в отдельные CRUD-маршруты.
-  View валидирует `ModelForm`, сохраняет изменения в SQLite, кладет статус в `django.contrib.messages` и делает redirect обратно в workspace URL.
-  Состояние интерфейса после действия хранится не в frontend-состоянии, а в query-параметрах URL.
+### `src/staticfiles`
 
-- Удаление
-  Удаление клиента идет через `client_delete`; связанные автомобили удаляются каскадно на уровне ORM из-за `on_delete=models.CASCADE`.
-  Удаление автомобиля идет отдельным POST и возвращает пользователя к выбранному клиенту.
+Это собранная статика, в основном артефакты Django admin. Не место для правок бизнес-логики.
 
-## Внешние интеграции
+## 3. Слои и реальные зависимости
 
-- ABCP
-  Используется в `analogs.views` через HTTP GET.
-  Нужны переменные окружения `ABCP_URL`, `ABCP_USER`, `ABCP_PASS`.
-  Применяется для определения бренда по артикулу и получения аналогов.
+### `config`
 
-- МойСклад
-  Используется в `analogs.views` через HTTP GET с Bearer-токеном `MS_TOKEN`.
-  Применяется для сопоставления артикула с сущностью assortment и получения текущих остатков.
-  В коде зашит конкретный `storeId`, поэтому привязка идет к одному складу.
+Может зависеть от:
 
-- Django auth
-  Встроенная интеграция самого фреймворка для логина/логаута сотрудников поверх кастомной модели `employees.Employee`, кастомной формы логина и backend аутентификации по email.
+- Django settings API;
+- переменных окружения;
+- приложений проекта.
 
-- Django admin
-  Стандартная админка для прямой работы с моделями `Client` и `Car`.
+Не должен содержать:
 
-- Nginx + Gunicorn
-  Во время контейнерного запуска Nginx принимает HTTP, раздает `/static/` и проксирует остальные запросы в Gunicorn с Django.
+- предметную логику;
+- вызовы внешних бизнес-интеграций.
 
-## Что важно про текущую реализацию
+### `views`
 
-- Архитектура монолитная и серверно-рендеринговая.
-- Бизнес-логика в основном находится прямо во view-функциях.
-- Отдельного API-слоя, очередей, кэша и фоновых задач нет.
-- Поиск аналогов не сохраняет результаты в БД.
-- Основные постоянные данные системы сейчас включают клиентов, автомобили, сотрудников и приглашения в SQLite.
+Реальная роль:
 
-## Планируемая архитектура employee-auth
+- принять HTTP-запрос;
+- извлечь query string / POST;
+- создать и проверить формы;
+- вызвать сервис или ORM;
+- записать `messages`;
+- вернуть `render` или `redirect`.
 
-### Целевой подход
+Фактические зависимости:
 
-- Для сотрудников планируется отдельный внутренний auth-контур без публичной регистрации.
-- Для employee-auth утвержден переход на кастомную модель пользователя Django с email как основным идентификатором входа.
-- Статусы сотрудника фиксируются на уровне доменной модели и ограничиваются значениями `created`, `active`, `deactivated`.
-- Роли и права в первой версии должны строиться на стандартных Django Groups и Permissions, с возможностью расширения без отказа от встроенного механизма.
+- `employees.views` зависит от forms, services, repository, permission helpers;
+- `counterparties.views` зависит от forms, ORM, query params, templates;
+- `analogs.views` зависит от `requests`, `os.getenv`, внешних API и templates.
 
-### Почему рекомендован кастомный пользователь
+### `services`
 
-- Система должна поддерживать только email-only вход.
-- Нужны явные статусы сотрудника уровня домена: `created`, `active`, `deactivated`.
-- Нужен безопасный задел на расширение ролей и правил доступа.
-- Проекту нужен предсказуемый контроль над полями пользователя и сценариями активации.
+Сейчас существуют только в `employees`.
 
-### Допустимая альтернатива
+Роль:
 
-- Альтернатива: оставить стандартный `auth.User`, хранить email отдельно и синхронизировать `username` с email.
-- Этот вариант проще на короткой дистанции, но хуже масштабируется, сохраняет технический долг вокруг identity и усложняет дальнейшее развитие ролей и employee-flow.
-- Для первой версии employee-auth этот вариант не является целевым и не должен использоваться в новых этапах плана.
+- бизнес-сценарии доступа сотрудников;
+- транзакции;
+- генерация токенов;
+- запись аудита;
+- rate limiting;
+- завершение сессий.
 
-### Реализованные модули этапов 2-7
+Зависимости:
 
-- `employees.models`
-  Реализованы модели `Employee` и `EmployeeInvitation`.
+- repository;
+- models;
+- Django settings;
+- cache;
+- sessions.
 
-- `employees.managers`
-  Реализован менеджер `EmployeeManager` для создания пользователей по email.
+### `repositories`
 
-- `employees.forms`
-  Реализованы формы `EmployeeAuthenticationForm` для email-only login, `EmployeeInvitationIssueForm` для admin-only invite flow и `EmployeePasswordSetupForm` для установки пароля по invite-ссылке.
+Сейчас есть только [`src/employees/repositories/invitation_repository.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/employees/repositories/invitation_repository.py).
 
-- `employees.auth_backends`
-  Реализован backend `EmployeeAuthenticationBackend`, который запрещает вход сотрудникам со статусом `deactivated`.
+Роль:
 
-- `employees.permissions`
-  Реализован модуль канонических permissions employee-auth первой версии.
-  Сейчас он фиксирует группы `admin` и `user`, права `employees.manage_employee_access` и `employees.view_employee_access_audit`, а также автоматически синхронизирует состав этих групп после миграций.
+- собрать ORM-операции, которые переиспользуются в сервисах доступа.
 
-- `employees.views`
-  Реализованы `EmployeeLoginView` для маршрута `/accounts/login/`, employee-management view для создания сотрудника, перевыпуска приглашения и деактивации сотрудника, а также публичный экран `/employees/invitations/<token>/set-password/`.
+### `forms`
 
-- `employees.services.invitation_service`
-  Реализован сценарий безопасного выпуска приглашения: raw token генерируется один раз, в базе хранится только хеш, TTL задается настройкой проекта, предыдущее активное приглашение отзывается в той же транзакции.
+Роль:
 
-- `employees.repositories.invitation_repository`
-  Реализован репозиторий для CRUD-операций invite flow, активации сотрудника по токену и списка сотрудников в employee-management.
+- валидация HTML-форм;
+- минимальная настройка виджетов;
+- без бизнес-сценариев.
 
-- `employees.services.password_setup_service`
-  Реализован сценарий установки пароля по одноразовому токену с единым сообщением об ошибке для невалидной ссылки, переводом сотрудника в `active`, инвалидированием токена и завершением старых сессий.
+### `models`
 
-- `employees.services.session_service`
-  Реализован отдельный сервис завершения сессий сотрудника через `django.contrib.sessions`.
-  Текущий механизм ищет активные серверные сессии по `SESSION_KEY` и удаляет только сессии целевого сотрудника.
-  Этот сервис используется как общий механизм инвалидирования сессий для activation/reset/deactivation сценариев employee-auth.
+Роль:
 
-- `employees.services.security_service`
-  Реализован сервис ограничения частоты запросов для критичных auth-сценариев employee-auth. Ключи лимитов строятся по паре `IP + identifier` и используются в `EmployeeLoginView`, `employee_set_password` и `employee_reissue_invitation`.
+- структура данных;
+- связи;
+- ограничения;
+- `Meta`;
+- простые invariants.
 
-- `employees.models`
-  Добавлена модель `EmployeeAccessAuditEvent` для хранения аудита employee-auth в БД.
-  Событие хранит тип действия, сотрудника, инициатора, связанное приглашение, IP-адрес, метаданные и время фиксации.
+## 4. Модель данных
 
-- `employees.services.audit_service`
-  Реализован сервис записи ключевых событий employee-auth в журнал аудита.
-  В текущей реализации он фиксирует создание сотрудника, выпуск приглашения, отзыв приглашения, успешную активацию, неуспешные попытки активации и деактивацию сотрудника.
+### `counterparties`
 
-- `employees.admin`
-  В Django admin зарегистрирован журнал аудита доступа; просмотр разрешен только staff-пользователям с permission `employees.view_employee_access_audit`, а добавление, изменение и удаление отключены.
+`Client`
 
-### Планируемые модули следующих этапов
+- `name`
+- `phone`
+- `note`
+- `created_at`
 
-- `employees.services`
-  Дальнейшее место для сценариев деактивации, reset доступа и завершения сессий.
+`Car`
 
-- `employees.repositories`
-  Дальнейшее место для инкапсуляции ORM-операций по security-аудиту и сессионным сценариям employee-auth.
+- `client -> Client`
+- `brand`
+- `model`
+- `license_plate`
+- `vin`
+- `note`
+- `created_at`
 
-- `employees.views`
-  Планируемые view для следующих административных security-сценариев employee-auth поверх уже реализованных login, employee-management и password-setup view.
+Поведение:
 
-### Модель данных
+- удаление клиента каскадно удаляет связанные автомобили;
+- явных уникальных ограничений на VIN, номер или телефон нет.
 
-- Сотрудник
-  Реализован как кастомная пользовательская сущность с email как идентификатором входа.
-  Хранит статус доступа `created | active | deactivated`, флаг `email_verified`, а также служебные поля `created_at` и `updated_at`.
+### `employees`
 
-- Приглашение сотрудника
-  Реализовано как отдельная сущность для одноразового токена установки пароля.
-  Хранит только `token_hash`, срок действия, время использования, время отзыва, автора выдачи и служебные timestamps.
-  На уровне БД зафиксировано ограничение на одно незавершенное приглашение на сотрудника: одновременно может существовать только одна запись без `used_at` и `revoked_at`.
+`Employee`
 
-- Журнал событий безопасности
-  Реализован как отдельная сущность `EmployeeAccessAuditEvent` в БД.
-  Первая версия хранит события employee-auth и доступна администраторам через Django admin.
+- email как `USERNAME_FIELD`
+- статусы `created`, `active`, `deactivated`
+- `email_verified`
+- стандартные поля `AbstractUser`, кроме `username`
 
-### Потоки данных
+`EmployeeInvitation`
 
-- Создание сотрудника
-  Администратор создает сотрудника.
-  Сервис employee-auth создает запись сотрудника в статусе `created`, инвалидирует предыдущее активное приглашение и выпускает новый одноразовый токен.
-  Пользователю системы показывается готовая ссылка для ручной отправки сотруднику.
+- хранит только `token_hash`, а не сырой токен;
+- имеет `expires_at`, `used_at`, `revoked_at`;
+- на уровне БД разрешено только одно незавершённое приглашение на сотрудника.
 
-- Активация по ссылке
-  Сотрудник открывает ссылку установки пароля.
-  View передает токен в сервис активации.
-  Сервис проверяет хеш токена, срок жизни, статус приглашения и статус сотрудника.
-  При успехе сервис устанавливает пароль, помечает приглашение использованным, переводит сотрудника в `active`, завершает старые сессии и возвращает управление экрану логина.
+`EmployeeAccessAuditEvent`
 
-- Логин сотрудника
-  Сотрудник открывает `/accounts/login/`.
-  `employees.views.EmployeeLoginView` отдает `EmployeeAuthenticationForm`, где идентификатором входа служит email.
-  `employees.auth_backends.EmployeeAuthenticationBackend` разрешает аутентификацию только если сотрудник не находится в статусе `deactivated`.
-  После успешного входа сотрудник попадает в стандартный `LOGIN_REDIRECT_URL`, а доступ в Django admin остается только у сотрудников с административными флагами Django.
+- тип события;
+- целевой сотрудник;
+- инициатор;
+- приглашение;
+- IP;
+- JSON metadata;
+- время создания.
 
-- Повторная выдача доступа
-  Администратор инициирует перевыпуск приглашения.
-  Сервис отзывает предыдущее активное приглашение и создает новое.
-  В интерфейсе показывается только новая ссылка.
+## 5. Точки входа
 
-- Сброс доступа
-  Администратор инициирует reset доступа для активного сотрудника.
-  `employees.services.access_service` делает прежний пароль непригодным, переводит сотрудника в `created`, завершает активные сессии, при наличии отзывает незавершенное приглашение и выпускает новое.
-  В интерфейсе employee-management администратор получает новую ссылку установки пароля для ручной передачи сотруднику.
+HTTP:
 
-- Деактивация
-  Администратор переводит сотрудника в `deactivated`.
-  `employees.services.access_service` завершает активные сессии, запрещает дальнейший вход и сохраняет событие аудита.
-  Для защиты административного контура сервис не позволяет системному администратору деактивировать собственную учетную запись.
+- `/accounts/login/` -> `EmployeeLoginView`
+- `/accounts/` -> стандартные Django auth URLs
+- `/employees/` -> employee management
+- `/analogs/` -> поиск аналогов
+- `/counterparties/` -> workspace клиентов
+- `/admin/` -> Django admin
 
-### Правила безопасности
+Фоновых задач, отдельных CLI-команд приложения или worker-процессов в репозитории нет.
 
-- Публичная регистрация не добавляется.
-- Токены активации одноразовые и ограничены по времени.
-- Токены не должны храниться в базе в открытом виде.
-- При ошибке токена интерфейс не должен раскрывать, был ли токен просрочен, использован или отозван.
-- Логин, установка пароля и перевыпуск приглашения должны быть защищены ограничением частоты запросов.
-- В текущей реализации применяются лимиты:
-  `login` — 5 попыток за 5 минут с блокировкой на 5 минут для пары `IP + email`,
-  `password_setup` — 5 попыток за 5 минут с блокировкой на 10 минут для пары `IP + token`,
-  `invitation_reissue` — 10 попыток за 60 минут с блокировкой на 15 минут для пары `IP + employee_id`.
-- При срабатывании лимита интерфейс возвращает сообщение о превышении лимита с временем ожидания до следующей попытки.
-- При смене email сотрудника должен запускаться новый сценарий подтверждения доступа.
+## 6. Конфигурация и инфраструктура
 
-### Влияние на существующий проект
+### Настройки
 
-- `config.settings`
-  Требует настройки кастомной модели пользователя, backend аутентификации по email, security-параметров cookie, production baseline для HTTPS/cookie и конфигурации TTL токена.
+Главные настройки:
 
-- `config.urls`
-  Потребует подключения маршрутов employee-auth рядом с текущими `accounts/`.
+- [`src/config/settings.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/config/settings.py)
 
-- `templates/registration/login.html`
-  Потребует обновления формы для email-only входа.
+Подтверждённые env vars:
 
-- Django admin
-  Должен остаться инструментом только для администраторов и не должен использоваться как рабочий интерфейс для обычных сотрудников.
+- `DJANGO_ENV`
+- `DJANGO_SECRET_KEY`
+- `DJANGO_DEBUG`
+- `DJANGO_ALLOWED_HOSTS`
+- `ABCP_URL`
+- `ABCP_USER`
+- `ABCP_PASS`
+- `MS_TOKEN`
+
+### Docker
+
+- [`Dockerfile`](/C:/Users/lipyf/GitHub/AutoPartsSync/Dockerfile)
+- [`docker-compose.yaml`](/C:/Users/lipyf/GitHub/AutoPartsSync/docker-compose.yaml)
+- [`docker/nginx/default.conf`](/C:/Users/lipyf/GitHub/AutoPartsSync/docker/nginx/default.conf)
+
+Контур:
+
+- Gunicorn внутри `web`;
+- Nginx спереди;
+- `collectstatic` выполняется при старте `web`;
+- отдельный volume под `staticfiles`.
+
+## 7. Где должна находиться логика
+
+### Уже нормально размещено
+
+- employee-auth сценарии: в `employees/services/*`;
+- ORM-операции invite/access: в `employees/repositories/invitation_repository.py`;
+- правила модели доступа: в `employees/models.py` и `employees/permissions.py`.
+
+### Сейчас размещено неидеально, но так устроен код
+
+- `analogs`: интеграции и orchestration прямо во view;
+- `counterparties`: ORM и workspace-логика прямо во view;
+- большие UI-правила в шаблонах.
+
+### Куда класть новую логику
+
+- изменения employee-auth продолжать в текущем service/repository паттерне `employees`;
+- новые поля и ограничения клиентов/авто добавлять в `counterparties.models` и `counterparties.forms`;
+- если в `counterparties` появится повторяемый бизнес-сценарий, сначала выделять сервис, не ломая текущие URL и query-параметры;
+- если дорабатывается `analogs`, желательно выносить внешние вызовы из view в отдельный integration/service слой поэтапно, без скрытого переписывания фичи.
+
+## 8. Где логика не должна находиться
+
+- в `config`;
+- в `staticfiles`;
+- в миграциях;
+- в шаблонах, если это бизнес-правило, а не чисто визуальное поведение;
+- в `print()`-вызовах для обработки ошибок интеграций.
+
+## 9. Зафиксированные архитектурные нарушения
+
+Это не задачи на немедленное переписывание. Это факты, которые надо учитывать при разработке.
+
+1. [`src/analogs/views.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/analogs/views.py)
+   Смешаны HTTP-обработка, env access, внешние API и преобразование результата.
+2. [`src/analogs/views.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/analogs/views.py)
+   Захардкожен `storeId` МойСклад.
+3. [`src/analogs/views.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/analogs/views.py)
+   Ошибки интеграций обрабатываются через `print()`, а не `logging`.
+4. [`src/counterparties/views.py`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/counterparties/views.py)
+   View-файл совмещает HTTP, ORM, выбор состояния workspace и часть прикладной логики.
+5. [`src/templates/counterparties/client_list.html`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/templates/counterparties/client_list.html)
+   Шаблон содержит крупные блоки inline CSS/JS и становится точкой концентрации UI-логики.
+6. [`src/templates/base.html`](/C:/Users/lipyf/GitHub/AutoPartsSync/src/templates/base.html)
+   Общий layout содержит большой встроенный CSS вместо отдельной статики.
+
+## 10. Что не реализовано
+
+По коду отсутствуют:
+
+- публичная регистрация;
+- восстановление пароля сотрудником без администратора;
+- email-отправка приглашений из системы;
+- API для фронтенда;
+- история поиска аналогов;
+- массовый импорт/экспорт клиентов;
+- отдельный service/repository слой для `counterparties` и `analogs`.

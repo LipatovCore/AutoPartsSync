@@ -1,98 +1,99 @@
 # Codex Working Rules
 
-## Inspect before editing
+## 1. Обязательное чтение перед началом работы
 
-Before any code change, inspect:
+Всегда читать в таком порядке:
 
-1. `README.md`
-2. `docs/architecture.md`
-3. `docs/development-rules.md`
-4. `docs/decisions-and-debt.md`
-5. the exact app files you will touch
+1. [todo.md](/C:/Users/lipyf/GitHub/AutoPartsSync/todo.md)
+2. [README.md](/C:/Users/lipyf/GitHub/AutoPartsSync/README.md)
+3. [docs/architecture.md](/C:/Users/lipyf/GitHub/AutoPartsSync/docs/architecture.md)
+4. [docs/architecture-rules.md](/C:/Users/lipyf/GitHub/AutoPartsSync/docs/architecture-rules.md)
+5. [docs/requirements.md](/C:/Users/lipyf/GitHub/AutoPartsSync/docs/requirements.md)
+6. [Agent.md](/C:/Users/lipyf/GitHub/AutoPartsSync/Agent.md)
 
-Minimum inspection:
+После этого читать точные файлы задачи:
 
 - `src/config/settings.py`
 - `src/config/urls.py`
-- app-specific `views.py`
-- related `models.py`, `forms.py`, templates, `admin.py`
-- related migrations if models or domain meaning are involved
+- нужные `views.py`, `models.py`, `forms.py`, `templates`
+- связанные миграции, если меняется смысл данных
 
-## Read these docs first
+## 2. Жёсткие границы
 
-- `docs/project-overview.md`
-- `docs/architecture.md`
-- `docs/codebase-map.md`
-- `docs/ai-context.md`
+- не выдумывать неподтверждённую функциональность;
+- не превращать проект в API-first или frontend-first архитектуру;
+- не переносить доменную логику в `src/config/`;
+- не ломать query-параметры `q`, `client`, `dialog`, `car_form` в `counterparties`;
+- не считать mojibake в терминале доказательством повреждения файла.
 
-## Hard boundaries
+## 3. Текущие архитектурные факты
 
-- Do not invent unsupported business modules.
-- Do not turn the project into API-first architecture by accident.
-- Do not move domain logic into `src/config/`.
-- Do not break the query-param-driven workspace flow in `counterparties`.
-- Do not treat terminal mojibake as proof that file contents are broken.
+- `employees` использует service/repository подход;
+- `counterparties` работает через `models + forms + function-based views + templates`;
+- `analogs` держит интеграции и orchestration в `views.py`.
 
-## Files not to refactor casually
+Новый код должен подчиняться этим фактам и не усиливать существующий архитектурный долг без отдельной задачи.
+
+## 4. Файлы повышенного риска
 
 - `src/analogs/views.py`
 - `src/counterparties/views.py`
 - `src/templates/counterparties/client_list.html`
 - `src/templates/base.html`
-- existing migration chain
+- существующая цепочка миграций
 
-## Values that are part of the current UI contract
+Эти файлы нельзя рефакторить casually.
 
-Do not change without full workflow verification:
+## 5. Что обязательно делать после изменений
 
-- `q`
-- `client`
-- `dialog`
-- `car_form`
+Всегда запускать:
 
-## What must be tested after changes
+```powershell
+cd src
+..\.venv\Scripts\python.exe manage.py check
+..\.venv\Scripts\python.exe manage.py test
+```
 
-Always run:
+И всегда:
 
-- `python manage.py check`
-- `python manage.py test`
+- вручную проверять затронутый UI-сценарий;
+- отдельно проверять auth flow, если менялся доступ сотрудников;
+- обновлять документацию, если менялись правила, структура или поведение.
 
-Also manually test the affected UI flow, especially if you changed:
+## 6. Как работать с `todo.md`
 
-- templates
-- redirects
-- auth
-- external integration behavior
-- ORM queries in `counterparties`
-- model forms
+`todo.md` обязателен для агента.
 
-## How to record uncertainty
+- читать перед началом работы;
+- обновлять статус выполненных задач;
+- добавлять найденные новые задачи;
+- не считать работу завершённой, если `todo.md` остался неактуальным относительно результатов.
 
-Use one of these labels:
+## 7. Как фиксировать неопределённость
+
+Использовать только явные метки:
 
 - `Unknown`
 - `Assumption`
 - `Needs verification`
-- `Historical evidence`
 
-Do not promote a guess into a fact.
+Нельзя превращать предположение в факт.
 
-## When docs must be updated
+## 8. Когда обязательно обновлять docs
 
-Update docs whenever you change:
+Если меняется хотя бы одно из ниже:
 
-- project scope
-- env vars
-- commands
-- architecture boundaries
-- app/module structure
-- migration expectations
-- known risks or debt
-- practical rules future agents must follow
+- env vars;
+- команды запуска;
+- структура модулей;
+- архитектурные ограничения;
+- поведение фич;
+- риски;
+- постоянные правила работы агента.
 
-Minimum docs review after a code change:
+Минимум обновлений:
 
 - `README.md`
-- one or more files in `docs/`
-- `docs/ai-context.md` if agent workflow changed
-- `.codex/working-rules.md` if stable operating rules changed
+- один или несколько файлов в `docs/`
+- `todo.md`
+- `.codex/working-rules.md`, если изменились стабильные правила работы
